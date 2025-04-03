@@ -23,8 +23,8 @@ const GameOverModal: React.FC<GameOverModalProps> = ({ onClose }) => {
     || dailyPokemon?.sprites?.front_default;
   
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 relative">
+    <div className="fixed inset-0 bg-pokemon-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-pokemon-white rounded-lg shadow-xl max-w-md w-full p-6 relative">
         <button 
           onClick={onClose}
           className="absolute top-2 right-2 text-gray-500 hover:text-gray-700"
@@ -36,7 +36,7 @@ const GameOverModal: React.FC<GameOverModalProps> = ({ onClose }) => {
         </button>
         
         <div className="text-center">
-          <h2 className={`text-2xl font-bold mb-4 ${isWin ? 'text-green-600' : 'text-red-600'}`}>
+          <h2 className={`text-2xl font-bold mb-4 ${isWin ? 'text-pokemon-blue' : 'text-pokemon-red'}`}>
             {isWin ? 'Congratulations!' : 'Game Over!'}
           </h2>
           
@@ -59,7 +59,7 @@ const GameOverModal: React.FC<GameOverModalProps> = ({ onClose }) => {
           <div className="mt-6 flex justify-center space-x-4">
             <button
               onClick={handlePlayAgain}
-              className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors"
+              className="px-4 py-2 bg-pokemon-red text-pokemon-white rounded-md hover:bg-primary-700 transition-colors"
             >
               Play Again
             </button>

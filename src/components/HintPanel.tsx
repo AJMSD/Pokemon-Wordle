@@ -9,8 +9,8 @@ const HintPanel: React.FC = () => {
   }
   
   return (
-    <div className="mt-6 p-4 bg-blue-50 rounded-md border border-blue-200 shadow-sm">
-      <h2 className="text-xl font-semibold mb-3 text-blue-800">Hints</h2>
+    <div className="mt-6 p-4 bg-pokemon-blue/10 rounded-md border border-pokemon-blue/30 shadow-sm">
+      <h2 className="text-xl font-semibold mb-3 text-pokemon-blue">Hints</h2>
       
       <div className="space-y-3">
         <HintItem 
@@ -61,12 +61,12 @@ const HintItem: React.FC<HintItemProps> = ({
   
   return (
     <div className={`flex items-center p-2 rounded ${
-      revealed ? 'bg-white' : willUnlockSoon ? 'bg-yellow-50' : ''
+      revealed ? 'bg-pokemon-white' : willUnlockSoon ? 'bg-pokemon-yellow/20' : ''
     }`}>
       <div className="w-28 font-medium text-gray-700">{label}:</div>
       <div>
         {revealed ? (
-          <span className="font-medium text-blue-700">{value}</span>
+          <span className="font-medium text-pokemon-red">{value}</span>
         ) : (
           <span className="text-gray-500">
             {willUnlockSoon 

@@ -37,9 +37,23 @@ export const useGame = () => {
     if (!input) return [];
     
     const normalizedInput = normalizePokemonName(input);
+    
+    // Keep track of normalized names we've already seen
+    const normalizedNames = new Set<string>();
+    
     return pokemonList
-      .filter(name => name.startsWith(normalizedInput))
-      .filter(name => !guesses.includes(name))
+      .filter(name => {
+        // Check if the Pokémon name starts with the input
+        if (name.startsWith(normalizedInput)) {
+          // Get normalized name and check if we've seen it before
+          const normalized = normalizePokemonName(name);
+          if (!normalizedNames.has(normalized) && !guesses.includes(name)) {
+            normalizedNames.add(normalized);
+            return true;
+          }
+        }
+        return false;
+      })
       .slice(0, 5); // Limit to 5 suggestions
   }, [pokemonList, guesses]);
 

@@ -7,7 +7,7 @@ export const normalizePokemonName = (name: string): string => {
   return name
     .toLowerCase()
     .replace(/\s+/g, '')
-    .replace(/-mega$|-gmax$|-alola$|-galar$|-hisui$|-paldea$|-green-plumage$|-incarnate$/, '');
+    .replace(/-mega$|-gmax$|-alola$|-galar$|-hisui$|-paldea$|-green-plumage$|-incarnate$|-f$|-m$|-shield$|-single-strike$|-normal$|-plant$|-altered$|-land$|-red-striped$|-standard$|-ordinary$|-aria$|-male$|-average$|-50$|-baile$|-midday$|-solo$|-red-meteor$|-disguised$|-amped$|-full-belly$|-family-of-four$|-zero$|-curly$|-two-segment$|-ice$/, '');
 };
 
 // Simple hash function for deterministic Pokemon selection
@@ -21,11 +21,25 @@ const simpleHash = (str: string): number => {
   return Math.abs(hash);
 };
 
-// Get a deterministic Pokémon for the day using simple hash
+// Get a deterministic Pokémon for the day using improved randomization
 export const getDailyPokemonIndex = (): number => {
   const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-  console.log(today);
-  return simpleHash(today);
+  
+  // Use a more random hash technique with multiple large prime numbers and XOR operations
+  const seed = today + "pokemonWordle"; // add salt for extra randomization
+  let hash = 0;
+  
+  // Use different prime multipliers to improve distribution
+  const PRIME1 = 7919; // Large prime number
+  const PRIME2 = 6733;
+  
+  for (let i = 0; i < seed.length; i++) {
+    // Use XOR and rotation for better hash distribution
+    hash = ((hash << 5) ^ (hash >> 7)) + seed.charCodeAt(i) * PRIME1;
+    hash = (hash * PRIME2) & 0x7FFFFFFF; // Keep within 31-bit positive range
+  }
+  
+  return hash % 1025; // Limit to Pokémon count
 };
 
 // Get a random Pokémon index
@@ -40,9 +54,11 @@ export const fetchAllPokemon = async (): Promise<string[]> => {
     const data = await response.json();
     
     // Extract just the names and normalize them
-    return data.results.map((pokemon: { name: string }) => 
+    const normalizedNames = data.results.map((pokemon: { name: string }) => 
       normalizePokemonName(pokemon.name)
     );
+    
+    return normalizedNames;
   } catch (error) {
     console.error('Error fetching Pokémon list:', error);
     throw error;

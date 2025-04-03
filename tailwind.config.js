@@ -8,21 +8,30 @@ export default {
     extend: {
       colors: {
         primary: {
-          50: '#f0f9ff',
-          100: '#e0f2fe',
-          200: '#bae6fd',
-          300: '#7dd3fc',
-          400: '#38bdf8',
-          500: '#0ea5e9',
-          600: '#0284c7',
-          700: '#0369a1',
-          800: '#075985',
-          900: '#0c4a6e',
-          950: '#082f49',
+          50: '#FFF3F3',
+          100: '#FFE8E8',
+          200: '#FFC7C7',
+          300: '#FFA3A3',
+          400: '#FF6B6B',
+          500: '#FF4554',
+          600: '#EE1515',
+          700: '#CC0000',
+          800: '#A30000',
+          900: '#841010',
+          950: '#500A0A',
         },
-        correct: '#4ade80', // green for correct letters
-        present: '#facc15', // yellow for present but wrong position
-        absent: '#94a3b8', // gray for absent letters
+        pokemon: {
+          red: '#EE1515',
+          blue: '#3B4CCA',
+          yellow: '#FFDE00',
+          gold: '#B3A125',
+          black: '#222224',
+          white: '#F0F0F0',
+          wurmple: '#A03F3B',
+        },
+        correct: '#47A047', // grass-type green for correct letters
+        present: '#FFDE00', // pokemon yellow for present but wrong position
+        absent: '#616161', // pokeball button gray for absent letters
       },
       fontFamily: {
         sans: ['Inter', 'sans-serif'],
