@@ -1,6 +1,7 @@
 import React from 'react'
 import { useGameStore } from '../store/gameStore'
 import { getLetterMatchResult } from '../utils/pokemonUtils'
+import PokeballAnimation from './PokeballAnimation'
 
 const GuessList: React.FC = () => {
   const { guesses, dailyPokemon } = useGameStore()
@@ -58,6 +59,15 @@ const GuessList: React.FC = () => {
                   );
                 })}
               </div>
+              
+              {isCorrect && (
+                <div className="mt-4 flex flex-col items-center">
+                  <PokeballAnimation pokemonImage={dailyPokemon?.sprites?.other?.['official-artwork']?.front_default || dailyPokemon?.sprites?.front_default} />
+                  <p className="mt-3 text-lg font-bold text-pokemon-red">
+                    Congratulations! You caught {dailyPokemon?.name}!
+                  </p>
+                </div>
+              )}
             </li>
           );
         })}

@@ -13,17 +13,14 @@ const GameBoard: React.FC = () => {
   const { guesses, gameStatus, makeGuess, error, resetError } = useGameStore()
   const { toasts, addToast, removeToast, showError } = useToast()
   
-  // Show game over modal when game ends
+  // Show game over modal only when game is lost
   useEffect(() => {
-    if (gameStatus === 'won' || gameStatus === 'lost') {
+    if (gameStatus === 'lost') {
       setShowModal(true);
-      
-      // Show toast based on game result
-      if (gameStatus === 'won') {
-        addToast('Congratulations! You guessed correctly!', 'success');
-      } else {
-        addToast('Game over! Better luck next time!', 'info');
-      }
+      addToast('Game over! Better luck next time!', 'info');
+    } else if (gameStatus === 'won') {
+      // Just show a toast for winning, no modal
+      addToast('Congratulations! You guessed correctly!', 'success');
     }
   }, [gameStatus, addToast]);
   
@@ -63,7 +60,7 @@ const GameBoard: React.FC = () => {
         />
       )}
       
-      {showModal && (
+      {showModal && gameStatus === 'lost' && (
         <GameOverModal onClose={handleCloseModal} />
       )}
       

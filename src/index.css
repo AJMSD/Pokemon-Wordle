@@ -21,3 +21,163 @@
     @apply bg-pokemon-red text-white hover:bg-primary-700;
   }
 }
+
+/* Pokeball Animation Styles */
+.pokemon-catch-container {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  margin: 0 auto;
+  margin-top: 20px;
+}
+
+.pokemon-target {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.pokemon-target.visible {
+  opacity: 1;
+}
+
+.pokemon-target-image {
+  max-width: 80px;
+  max-height: 80px;
+}
+
+.pokeball-wrapper {
+  position: absolute;
+  top: -100px;
+  left: 50%;
+  transform: translateX(-50%);
+  transition: top 1s ease;
+}
+
+.pokeball-wrapper.falling {
+  animation: fall 0.5s ease-in-out forwards;
+}
+
+.pokeball-wrapper.on-ground {
+  top: 70px;
+}
+
+/* Improved Pokeball design based on CodePen */
+.pokeball {
+  position: relative;
+  width: 60px;
+  height: 60px;
+}
+
+.pokeball__button {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  background: #7f8c8d;
+  border: 3px solid #ffffff;
+  border-radius: 50%;
+  z-index: 10;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 2px #333;
+}
+
+.pokeball__top-half {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 50%;
+  background: #ee1515;
+  border-radius: 30px 30px 0 0;
+  border: 3px solid #333;
+}
+
+.pokeball__bottom-half {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 50%;
+  background: #ffffff;
+  border-radius: 0 0 30px 30px;
+  border: 3px solid #333;
+}
+
+.pokeball__hinge {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: #333;
+  z-index: 5;
+  transform: translateY(-50%);
+}
+
+/* Pokeball glow effect */
+.pokeball-glow {
+  position: absolute;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,165,0,0.6) 0%, rgba(255,165,0,0) 70%);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  z-index: -1;
+  transition: opacity 0.5s ease;
+}
+
+.pokeball-glow.active {
+  opacity: 1;
+  animation: pulse 2s infinite;
+}
+
+.pokeball.shake {
+  animation: shake 1.25s cubic-bezier(.36,.07,.19,.97) 3;
+}
+
+.pokeball.caught {
+  /* Add subtle orange glow to the pokeball itself */
+  filter: drop-shadow(0 0 8px rgba(255, 165, 0, 0.8));
+}
+
+@keyframes fall {
+  0% {
+    top: -100px;
+    transform: translateX(-50%);
+  }
+  60% {
+    top: 70px;
+    transform: translateX(-50%);
+  }
+  80% {
+    top: 60px;
+    transform: translateX(-50%);
+  }
+  100% {
+    top: 70px;
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes shake {
+  0% { transform: translate(0, 0) rotate(0); }
+  20% { transform: translate(-10px, 0) rotate(-20deg); }
+  30% { transform: translate(10px, 0) rotate(20deg); }
+  50% { transform: translate(-10px, 0) rotate(-10deg); }
+  60% { transform: translate(10px, 0) rotate(10deg); }
+  100% { transform: translate(0, 0) rotate(0); }
+}
+
+@keyframes pulse {
+  0% { transform: translate(-50%, -50%) scale(1); opacity: 0.7; }
+  50% { transform: translate(-50%, -50%) scale(1.2); opacity: 0.4; }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 0.7; }
+}
