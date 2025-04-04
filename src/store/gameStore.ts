@@ -22,28 +22,70 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
   gameStatus: 'playing',
   isLoading: false,
   error: null,
+  lastPlayedDate: null,
 
   // Initialize the game state
   initializeGame: async () => {
     set({ isLoading: true, error: null });
     
     try {
+      // Get the current date as string
+      const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      const lastPlayed = localStorage.getItem('lastPlayedDate');
+      
+      // If we already have state and it's the same day, restore previous game
+      if (lastPlayed === today && localStorage.getItem('gameState')) {
+        try {
+          const savedState = JSON.parse(localStorage.getItem('gameState') || '{}');
+          set({ 
+            ...savedState,
+            isLoading: false,
+            lastPlayedDate: today
+          });
+          return;
+        } catch (e) {
+          console.error('Failed to parse saved game state', e);
+          // Continue to initialize new game if restore fails
+        }
+      }
+      
       // 1. Fetch all Pokémon names
       const pokemonList = await fetchAllPokemon();
       
-      // 2. Get the daily Pokémon based on today's date
-      const dailyIndex = getDailyPokemonIndex() % pokemonList.length;
-      const dailyPokemonName = pokemonList[dailyIndex];
+      // 2. Get deterministic daily Pokémon
+      const dailyIndex = getDailyPokemonIndex();
+      const dailyPokemonName = pokemonList[dailyIndex % pokemonList.length];
       
       // 3. Fetch details for the daily Pokémon
       const dailyPokemon = await fetchPokemonDetails(dailyPokemonName);
       
-      // 4. Initialize game state
-      set({ 
+      // 4. Initialize new game state
+      const newState = { 
         dailyPokemon,
         pokemonList,
-        isLoading: false 
-      });
+        guesses: [],
+        hints: [
+          { type: 'ability', value: '', revealed: false },
+          { type: 'generation', value: '', revealed: false },
+          { type: 'type', value: [], revealed: false }
+        ],
+        gameStatus: 'playing',
+        isLoading: false,
+        lastPlayedDate: today
+      };
+      
+      set(newState);
+      
+      // Save initial state to localStorage
+      localStorage.setItem('lastPlayedDate', today);
+      localStorage.setItem('gameState', JSON.stringify({
+        dailyPokemon,
+        pokemonList,
+        guesses: [],
+        hints: newState.hints,
+        gameStatus: 'playing',
+        lastPlayedDate: today
+      }));
     } catch (error) {
       set({ 
         error: 'Failed to initialize game. Please try again.',
@@ -61,8 +103,8 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       gameStatus 
     } = get();
     
-    // Skip if game is already over or not initialized
-    if (gameStatus !== 'playing' || !dailyPokemon) {
+    // Skip if game not initialized or already won
+    if (!dailyPokemon || gameStatus !== 'playing') {
       return false;
     }
     
@@ -82,25 +124,34 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
     
     // Add to guesses
     const newGuesses = [...guesses, normalizedGuess];
-    set({ guesses: newGuesses, error: null });
+    const newState = { guesses: newGuesses, error: null };
     
     // Check win condition
     if (isCorrectGuess(normalizedGuess, dailyPokemon)) {
-      set({ gameStatus: 'won' });
-      return true;
+      newState.gameStatus = 'won';
+    } else if (newGuesses.length >= 10) {
+      // Check loss condition - 10 incorrect guesses
+      newState.gameStatus = 'lost';
     }
+    
+    // Save game state before updating
+    set(newState);
+    
+    // Save to localStorage
+    const today = new Date().toISOString().slice(0, 10);
+    localStorage.setItem('lastPlayedDate', today);
+    localStorage.setItem('gameState', JSON.stringify({
+      ...get(),
+      isLoading: false,
+      error: null
+    }));
     
     // Check if this attempt unlocks a new hint
     if (newGuesses.length === 3 || newGuesses.length === 6 || newGuesses.length === 9) {
       await get().revealHint(newGuesses.length);
     }
     
-    // Check loss condition (10 attempts)
-    if (newGuesses.length >= 10) {
-      set({ gameStatus: 'lost' });
-    }
-    
-    return false;
+    return newState.gameStatus === 'won';
   },
 
   // Reveal a hint based on the attempt number
@@ -134,6 +185,14 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       }
       
       set({ hints: newHints, isLoading: false });
+      
+      // Save updated state to localStorage
+      const today = new Date().toISOString().slice(0, 10);
+      localStorage.setItem('gameState', JSON.stringify({
+        ...get(),
+        isLoading: false,
+        error: null
+      }));
     } catch (error) {
       set({ 
         error: 'Failed to reveal hint. Please try again.',
@@ -144,7 +203,9 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
 
   // Reset the game state
   resetGame: () => {
-    set({
+    // Only reset the game, but keep the same Pokémon (for testing purposes)
+    const state = get();
+    const newState = {
       guesses: [],
       hints: [
         { type: 'ability', value: '', revealed: false },
@@ -153,12 +214,33 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       ],
       gameStatus: 'playing',
       error: null
-    });
+    };
+    
+    set(newState);
+    
+    // Save to localStorage
+    const today = new Date().toISOString().slice(0, 10);
+    localStorage.setItem('lastPlayedDate', today);
+    localStorage.setItem('gameState', JSON.stringify({
+      ...get(),
+      isLoading: false,
+      error: null
+    }));
   },
   
   // Reset the error state
   resetError: () => {
     set({ error: null });
+  },
+  
+  // Check for a new day and refresh game if needed
+  checkForNewDay: () => {
+    const { lastPlayedDate } = get();
+    const today = new Date().toISOString().slice(0, 10);
+    
+    if (lastPlayedDate !== today) {
+      get().initializeGame();
+    }
   }
 }));
 

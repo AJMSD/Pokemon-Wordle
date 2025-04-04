@@ -5,14 +5,12 @@ interface GuessInputProps {
   value: string
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void
   onSubmit: (e: React.FormEvent) => void
-  attemptsLeft: number
 }
 
 const GuessInput: React.FC<GuessInputProps> = ({ 
   value, 
   onChange, 
-  onSubmit, 
-  attemptsLeft 
+  onSubmit 
 }) => {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(-1)
@@ -171,7 +169,7 @@ const GuessInput: React.FC<GuessInputProps> = ({
         
         <div className="mt-2 flex items-center justify-between w-full max-w-md">
           <span className="text-sm text-gray-500">
-            {attemptsLeft} attempts remaining
+            Keep guessing until you get it right!
           </span>
           
           <button

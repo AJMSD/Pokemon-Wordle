@@ -48,6 +48,7 @@ export interface GameState {
   gameStatus: 'playing' | 'won' | 'lost';
   isLoading: boolean;
   error: string | null;
+  lastPlayedDate: string | null;
 }
 
 export interface GameActions {
@@ -56,4 +57,6 @@ export interface GameActions {
   resetGame: () => void;
   revealHint: (attemptNumber: number) => Promise<void>;
   resetError: () => void;
+  selectNewPokemon: () => Promise<void>;
+  checkForNewDay: () => void;
 }

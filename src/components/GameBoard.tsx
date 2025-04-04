@@ -3,24 +3,18 @@ import { useGameStore } from '../store/gameStore'
 import GuessInput from './GuessInput'
 import GuessList from './GuessList'
 import HintPanel from './HintPanel'
-import GameOverModal from './GameOverModal'
 import ToastContainer from './ToastContainer'
 import useToast from '../hooks/useToast'
 
 const GameBoard: React.FC = () => {
   const [currentGuess, setCurrentGuess] = useState('')
-  const [showModal, setShowModal] = useState(false)
   const { guesses, gameStatus, makeGuess, error, resetError } = useGameStore()
   const { toasts, addToast, removeToast, showError } = useToast()
   
-  // Show game over modal only when game is lost
+  // Show win toast when player guesses correctly
   useEffect(() => {
-    if (gameStatus === 'lost') {
-      setShowModal(true);
-      addToast('Game over! Better luck next time!', 'info');
-    } else if (gameStatus === 'won') {
-      // Just show a toast for winning, no modal
-      addToast('Congratulations! You guessed correctly!', 'success');
+    if (gameStatus === 'won') {
+      addToast('Congratulations! You guessed correctly! New Pokémon coming...', 'success');
     }
   }, [gameStatus, addToast]);
   
@@ -41,28 +35,17 @@ const GameBoard: React.FC = () => {
     setCurrentGuess('');
   };
   
-  const handleCloseModal = () => {
-    setShowModal(false);
-  };
-  
   return (
     <div className="space-y-6">
       <GuessList />
       
       <HintPanel />
       
-      {gameStatus === 'playing' && (
-        <GuessInput 
-          value={currentGuess}
-          onChange={(e) => setCurrentGuess(e.target.value)}
-          onSubmit={handleSubmitGuess}
-          attemptsLeft={10 - guesses.length}
-        />
-      )}
-      
-      {showModal && gameStatus === 'lost' && (
-        <GameOverModal onClose={handleCloseModal} />
-      )}
+      <GuessInput 
+        value={currentGuess}
+        onChange={(e) => setCurrentGuess(e.target.value)}
+        onSubmit={handleSubmitGuess}
+      />
       
       <ToastContainer toasts={toasts} removeToast={removeToast} />
     </div>

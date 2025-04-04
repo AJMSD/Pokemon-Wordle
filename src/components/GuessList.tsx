@@ -1,23 +1,30 @@
-import React from 'react'
+import React, { useRef, useEffect } from 'react'
 import { useGameStore } from '../store/gameStore'
 import { getLetterMatchResult } from '../utils/pokemonUtils'
-import PokeballAnimation from './PokeballAnimation'
 
 const GuessList: React.FC = () => {
   const { guesses, dailyPokemon } = useGameStore()
+  const guessesEndRef = useRef<HTMLDivElement>(null)
+  
+  // Scroll to bottom when new guesses are added
+  useEffect(() => {
+    if (guessesEndRef.current) {
+      guessesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [guesses.length]);
   
   if (guesses.length === 0) {
     return (
-      <div className="bg-gray-100 p-8 rounded-md text-center">
-        <p className="text-gray-500">Start guessing to see your attempts here!</p>
+      <div className="empty-guesses">
+        <p>Start guessing to see your attempts here!</p>
       </div>
     )
   }
   
   return (
-    <div className="space-y-2">
-      <h2 className="text-xl font-semibold">Your Guesses</h2>
-      <ul className="space-y-3">
+    <div className="guesses-list">
+      <h2 className="guesses-title">Your Guesses</h2>
+      <ul className="guess-items">
         {guesses.map((guess, index) => {
           const isCorrect = guess === dailyPokemon?.name;
           const letterResults = getLetterMatchResult(guess, dailyPokemon?.name || '');
@@ -25,34 +32,20 @@ const GuessList: React.FC = () => {
           return (
             <li 
               key={index}
-              className={`p-3 rounded-md ${
-                isCorrect
-                  ? 'bg-green-100 text-green-800 font-medium border border-green-300'
-                  : 'bg-gray-100'
-              } transition-all duration-300 transform ${
-                isCorrect ? 'scale-105' : ''
-              }`}
+              className={`guess-item ${isCorrect ? 'correct-guess' : ''}`}
             >
-              <div className="flex justify-between items-center mb-2">
-                <span className="font-medium">{guess}</span>
-                <span className="text-sm text-gray-500">
-                  Attempt {index + 1}
-                </span>
+              <div className="guess-info">
+                <span className="guess-name">{guess}</span>
+                <span className="guess-number">#{index + 1}</span>
               </div>
               
-              <div className="flex flex-wrap gap-1">
+              <div className="letter-results">
                 {guess.split('').map((letter, letterIndex) => {
                   const result = letterResults[letterIndex] || 'absent';
-                  const bgColor = {
-                    'correct': 'bg-correct text-white',
-                    'present': 'bg-present text-gray-800',
-                    'absent': 'bg-absent text-white'
-                  }[result];
-                  
                   return (
                     <div 
                       key={letterIndex}
-                      className={`w-8 h-8 flex items-center justify-center text-sm font-semibold uppercase rounded ${bgColor}`}
+                      className={`letter-result ${result}`}
                     >
                       {letter}
                     </div>
@@ -61,9 +54,8 @@ const GuessList: React.FC = () => {
               </div>
               
               {isCorrect && (
-                <div className="mt-4 flex flex-col items-center">
-                  <PokeballAnimation pokemonImage={dailyPokemon?.sprites?.other?.['official-artwork']?.front_default || dailyPokemon?.sprites?.front_default} />
-                  <p className="mt-3 text-lg font-bold text-pokemon-red">
+                <div className="mt-4 text-center">
+                  <p className="text-lg font-bold text-pokemon-red">
                     Congratulations! You caught {dailyPokemon?.name}!
                   </p>
                 </div>
@@ -71,6 +63,7 @@ const GuessList: React.FC = () => {
             </li>
           );
         })}
+        <div ref={guessesEndRef} />
       </ul>
     </div>
   )
