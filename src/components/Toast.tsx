@@ -13,8 +13,8 @@ const Toast: React.FC<ToastProps> = ({
   onClose, 
   duration = 3000 
 }) => {
-  // Use ref to track if component is mounted
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  // Change the type to avoid NodeJS namespace
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   useEffect(() => {
     // Clear any existing timer first

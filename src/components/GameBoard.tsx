@@ -8,7 +8,7 @@ import useToast from '../hooks/useToast'
 
 const GameBoard: React.FC = () => {
   const [currentGuess, setCurrentGuess] = useState('')
-  const { guesses, gameStatus, makeGuess, error, resetError } = useGameStore()
+  const { gameStatus, makeGuess, error, resetError } = useGameStore()
   const { toasts, addToast, removeToast, showError } = useToast()
   
   // Show win toast when player guesses correctly

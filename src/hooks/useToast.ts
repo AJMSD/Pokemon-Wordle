@@ -12,6 +12,7 @@ interface Toast {
   message: string;
   type: ToastType;
   duration?: number;
+  onClose?: () => void;  // Add onClose property
 }
 
 export const useToast = () => {
@@ -19,7 +20,13 @@ export const useToast = () => {
   
   const addToast = useCallback((message: string, type: ToastType = 'info', duration = 3000) => {
     const id = generateId();
-    setToasts(prev => [...prev, { id, message, type, duration }]);
+    setToasts(prev => [...prev, { 
+      id, 
+      message, 
+      type, 
+      duration,
+      onClose: () => removeToast(id)  // Add onClose implementation
+    }]);
     return id;
   }, []);
   

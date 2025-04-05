@@ -54,7 +54,7 @@ const HintPanel: React.FC = () => {
         
         <HintItem 
           label="Generation" 
-          value={hints[1].value || "Generation I"}
+          value={typeof hints[1].value === 'string' ? hints[1].value : "Generation I"}
           revealed={hints[1].revealed}
           unlocksAt={6}
           currentGuesses={guesses.length}

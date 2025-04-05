@@ -11,6 +11,8 @@ export const normalizePokemonName = (name: string): string => {
 };
 
 // Simple hash function for deterministic Pokemon selection
+// Commented out as it's unused currently but might be needed later
+/*
 const simpleHash = (str: string): number => {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -20,6 +22,7 @@ const simpleHash = (str: string): number => {
   }
   return Math.abs(hash);
 };
+*/
 
 // Get a deterministic Pokémon for the day using improved randomization
 export const getDailyPokemonIndex = (): number => {

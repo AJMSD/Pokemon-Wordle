@@ -124,18 +124,18 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
     
     // Add to guesses
     const newGuesses = [...guesses, normalizedGuess];
-    const newState = { guesses: newGuesses, error: null };
+    let newGameStatus = gameStatus;
     
     // Check win condition
     if (isCorrectGuess(normalizedGuess, dailyPokemon)) {
-      newState.gameStatus = 'won';
+      newGameStatus = 'won';
     } else if (newGuesses.length >= 10) {
       // Check loss condition - 10 incorrect guesses
-      newState.gameStatus = 'lost';
+      newGameStatus = 'lost';
     }
     
     // Save game state before updating
-    set(newState);
+    set({ guesses: newGuesses, error: null, gameStatus: newGameStatus });
     
     // Save to localStorage
     const today = new Date().toISOString().slice(0, 10);
@@ -151,7 +151,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       await get().revealHint(newGuesses.length);
     }
     
-    return newState.gameStatus === 'won';
+    return newGameStatus === 'won';
   },
 
   // Reveal a hint based on the attempt number
@@ -204,8 +204,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
   // Reset the game state
   resetGame: () => {
     // Only reset the game, but keep the same Pokémon (for testing purposes)
-    const state = get();
-    const newState = {
+    set({
       guesses: [],
       hints: [
         { type: 'ability', value: '', revealed: false },
@@ -214,9 +213,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       ],
       gameStatus: 'playing',
       error: null
-    };
-    
-    set(newState);
+    });
     
     // Save to localStorage
     const today = new Date().toISOString().slice(0, 10);
@@ -226,6 +223,39 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       isLoading: false,
       error: null
     }));
+  },
+  
+  // Add missing selectNewPokemon method
+  selectNewPokemon: async () => {
+    set({ isLoading: true, error: null });
+    
+    try {
+      const { pokemonList } = get();
+      
+      // Get a new random Pokémon
+      const randomIndex = Math.floor(Math.random() * pokemonList.length);
+      const randomPokemonName = pokemonList[randomIndex];
+      
+      // Fetch details for the new Pokémon
+      const newPokemon = await fetchPokemonDetails(randomPokemonName);
+      
+      set({ 
+        dailyPokemon: newPokemon, 
+        isLoading: false,
+        guesses: [],
+        hints: [
+          { type: 'ability', value: '', revealed: false },
+          { type: 'generation', value: '', revealed: false },
+          { type: 'type', value: [], revealed: false }
+        ],
+        gameStatus: 'playing'
+      });
+    } catch (error) {
+      set({ 
+        error: 'Failed to select a new Pokémon. Please try again.',
+        isLoading: false 
+      });
+    }
   },
   
   // Reset the error state
