@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { GameState, GameActions, Pokemon, Hint } from '../types';
+import { GameState, GameActions } from '../types';
 import { 
   fetchAllPokemon, 
   fetchPokemonDetails, 
@@ -15,9 +15,9 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
   pokemonList: [],
   guesses: [],
   hints: [
-    { type: 'ability', value: '', revealed: false },
-    { type: 'generation', value: '', revealed: false },
-    { type: 'type', value: [], revealed: false }
+    { type: 'ability' as const, value: '', revealed: false },
+    { type: 'generation' as const, value: '', revealed: false },
+    { type: 'type' as const, value: [], revealed: false }
   ],
   gameStatus: 'playing',
   isLoading: false,
@@ -60,14 +60,14 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       const dailyPokemon = await fetchPokemonDetails(dailyPokemonName);
       
       // 4. Initialize new game state
-      const newState = { 
+      const newState: Partial<GameState> = { 
         dailyPokemon,
         pokemonList,
         guesses: [],
         hints: [
-          { type: 'ability', value: '', revealed: false },
-          { type: 'generation', value: '', revealed: false },
-          { type: 'type', value: [], revealed: false }
+          { type: 'ability' as const, value: '', revealed: false },
+          { type: 'generation' as const, value: '', revealed: false },
+          { type: 'type' as const, value: [], revealed: false }
         ],
         gameStatus: 'playing',
         isLoading: false,
@@ -124,7 +124,8 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
     
     // Add to guesses
     const newGuesses = [...guesses, normalizedGuess];
-    let newGameStatus = gameStatus;
+    // Define proper types for new game status
+    let newGameStatus: 'playing' | 'won' | 'lost' = gameStatus;
     
     // Check win condition
     if (isCorrectGuess(normalizedGuess, dailyPokemon)) {
@@ -187,7 +188,6 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       set({ hints: newHints, isLoading: false });
       
       // Save updated state to localStorage
-      const today = new Date().toISOString().slice(0, 10);
       localStorage.setItem('gameState', JSON.stringify({
         ...get(),
         isLoading: false,
@@ -207,9 +207,9 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
     set({
       guesses: [],
       hints: [
-        { type: 'ability', value: '', revealed: false },
-        { type: 'generation', value: '', revealed: false },
-        { type: 'type', value: [], revealed: false }
+        { type: 'ability' as const, value: '', revealed: false },
+        { type: 'generation' as const, value: '', revealed: false },
+        { type: 'type' as const, value: [], revealed: false }
       ],
       gameStatus: 'playing',
       error: null
@@ -244,9 +244,9 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
         isLoading: false,
         guesses: [],
         hints: [
-          { type: 'ability', value: '', revealed: false },
-          { type: 'generation', value: '', revealed: false },
-          { type: 'type', value: [], revealed: false }
+          { type: 'ability' as const, value: '', revealed: false },
+          { type: 'generation' as const, value: '', revealed: false },
+          { type: 'type' as const, value: [], revealed: false }
         ],
         gameStatus: 'playing'
       });

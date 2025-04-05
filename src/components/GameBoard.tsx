@@ -5,6 +5,7 @@ import GuessList from './GuessList'
 import HintPanel from './HintPanel'
 import ToastContainer from './ToastContainer'
 import useToast from '../hooks/useToast'
+import { ToastProps } from './Toast'
 
 const GameBoard: React.FC = () => {
   const [currentGuess, setCurrentGuess] = useState('')
@@ -35,6 +36,12 @@ const GameBoard: React.FC = () => {
     setCurrentGuess('');
   };
   
+  // Cast toasts to the expected type
+  const typedToasts = toasts.map(toast => ({
+    ...toast,
+    onClose: toast.onClose || (() => removeToast(toast.id))
+  })) as (ToastProps & { id: string })[]
+  
   return (
     <div className="space-y-6">
       <GuessList />
@@ -47,7 +54,7 @@ const GameBoard: React.FC = () => {
         onSubmit={handleSubmitGuess}
       />
       
-      <ToastContainer toasts={toasts} removeToast={removeToast} />
+      <ToastContainer toasts={typedToasts} removeToast={removeToast} />
     </div>
   );
 };
