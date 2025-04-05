@@ -10,20 +10,6 @@ export const normalizePokemonName = (name: string): string => {
     .replace(/-mega$|-gmax$|-alola$|-galar$|-hisui$|-paldea$|-green-plumage$|-incarnate$|-f$|-m$|-shield$|-single-strike$|-normal$|-plant$|-altered$|-land$|-red-striped$|-standard$|-ordinary$|-aria$|-male$|-average$|-50$|-baile$|-midday$|-solo$|-red-meteor$|-disguised$|-amped$|-full-belly$|-family-of-four$|-zero$|-curly$|-two-segment$|-ice$/, '');
 };
 
-// Simple hash function for deterministic Pokemon selection
-// Commented out as it's unused currently but might be needed later
-/*
-const simpleHash = (str: string): number => {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
-  }
-  return Math.abs(hash);
-};
-*/
-
 // Get a deterministic Pokémon for the day using improved randomization
 export const getDailyPokemonIndex = (): number => {
   const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD

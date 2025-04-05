@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "homepage": "https://yourusername.github.io/Pokemon-Wordle",
+  "homepage": "https://ajmsd.github.io/Pokemon-Wordle",
   "scripts": {
     "dev": "vite",
     "build": "npx tsc && vite build",
