@@ -13,21 +13,17 @@ const Toast: React.FC<ToastProps> = ({
   onClose, 
   duration = 3000 
 }) => {
-  // Change the type to avoid NodeJS namespace
+  // Timer reference to handle auto-dismiss functionality
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
+  // Set up auto-dismiss timer
   useEffect(() => {
-    // Clear any existing timer first
     if (timerRef.current) {
       clearTimeout(timerRef.current);
     }
     
-    // Set new timer
-    timerRef.current = setTimeout(() => {
-      onClose();
-    }, duration);
+    timerRef.current = setTimeout(onClose, duration);
     
-    // Cleanup function
     return () => {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
@@ -35,12 +31,14 @@ const Toast: React.FC<ToastProps> = ({
     };
   }, [duration, onClose]);
   
+  // Style mapping based on toast type
   const bgColor = {
     error: 'bg-red-100 border-red-400 text-red-700',
     success: 'bg-green-100 border-green-400 text-green-700',
     info: 'bg-blue-100 border-blue-400 text-blue-700'
   }[type];
   
+  // Icon mapping based on toast type
   const iconType = {
     error: (
       <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">

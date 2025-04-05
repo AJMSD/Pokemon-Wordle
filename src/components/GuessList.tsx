@@ -1,18 +1,18 @@
 import React, { useRef, useEffect } from 'react'
 import { useGameStore } from '../store/gameStore'
-import { getLetterMatchResult } from '../utils/pokemonUtils'
 
 const GuessList: React.FC = () => {
   const { guesses, dailyPokemon } = useGameStore()
   const guessesEndRef = useRef<HTMLDivElement>(null)
   
-  // Scroll to bottom when new guesses are added
+  // Auto-scroll to the latest guess
   useEffect(() => {
     if (guessesEndRef.current) {
       guessesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [guesses.length]);
   
+  // Show placeholder when no guesses yet
   if (guesses.length === 0) {
     return (
       <div className="empty-guesses">
@@ -27,7 +27,6 @@ const GuessList: React.FC = () => {
       <ul className="guess-items">
         {guesses.map((guess, index) => {
           const isCorrect = guess === dailyPokemon?.name;
-          const letterResults = getLetterMatchResult(guess, dailyPokemon?.name || '');
           
           return (
             <li 
@@ -39,20 +38,7 @@ const GuessList: React.FC = () => {
                 <span className="guess-number">#{index + 1}</span>
               </div>
               
-              <div className="letter-results">
-                {guess.split('').map((letter, letterIndex) => {
-                  const result = letterResults[letterIndex] || 'absent';
-                  return (
-                    <div 
-                      key={letterIndex}
-                      className={`letter-result ${result}`}
-                    >
-                      {letter}
-                    </div>
-                  );
-                })}
-              </div>
-              
+              {/* Success message for correct guess */}
               {isCorrect && (
                 <div className="mt-4 text-center">
                   <p className="text-lg font-bold text-pokemon-red">
@@ -63,6 +49,7 @@ const GuessList: React.FC = () => {
             </li>
           );
         })}
+        {/* Invisible element for scrolling to bottom */}
         <div ref={guessesEndRef} />
       </ul>
     </div>

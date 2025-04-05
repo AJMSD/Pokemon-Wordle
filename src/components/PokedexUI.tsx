@@ -17,30 +17,24 @@ const PokedexUI: React.FC = () => {
   const inputRef = useRef<HTMLInputElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
   
+  // Get matching suggestions based on current input
   const suggestions = currentGuess.length > 0 ? getSuggestions(currentGuess) : []
 
-  // Check for mobile viewport
+  // Handle responsive layout based on screen size
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth <= 768);
-    };
+    const checkMobile = () => setIsMobile(window.innerWidth <= 768);
     
-    // Initial check
     checkMobile();
-    
-    // Add resize listener
     window.addEventListener('resize', checkMobile);
-    
-    // Cleanup
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Check for a new day on component mount
+  // Check for a new day when component mounts
   useEffect(() => {
     checkForNewDay();
   }, [checkForNewDay]);
 
-  // Show error toast when error occurs
+  // Display error toasts and game status notifications
   useEffect(() => {
     if (error) {
       showError(error)
@@ -54,11 +48,12 @@ const PokedexUI: React.FC = () => {
     }
   }, [error, resetError, showError, gameStatus, addToast, dailyPokemon?.name])
 
-  // Reset selected index when suggestions change
+  // Reset selected suggestion when suggestions change
   useEffect(() => {
     setSelectedIndex(-1)
   }, [suggestions])
 
+  // Handle form submission
   const handleSubmitGuess = (e: React.FormEvent) => {
     e.preventDefault()
     if (currentGuess.trim() === '') return
@@ -69,26 +64,26 @@ const PokedexUI: React.FC = () => {
     setJustSelected(false)
   }
 
+  // Handle suggestion selection
   const handleSelectSuggestion = (suggestion: string) => {
     setCurrentGuess(suggestion)
     setShowSuggestions(false)
     setSelectedIndex(-1)
     setJustSelected(true)
     
-    // Focus the input after selection
-    setTimeout(() => {
-      inputRef.current?.focus()
-    }, 10)
+    // Focus input for immediate submission
+    setTimeout(() => inputRef.current?.focus(), 10)
   }
 
+  // Handle keyboard navigation for suggestions
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    // If suggestions aren't showing or there are none, don't handle keyboard navigation
+    // Skip if no suggestions visible
     if (!showSuggestions || suggestions.length === 0) {
       setJustSelected(false)
       return
     }
 
-    // If we just selected and Enter is pressed again, submit the form
+    // Handle submission after selection
     if (justSelected && e.key === 'Enter') {
       e.preventDefault()
       formRef.current?.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
@@ -96,24 +91,24 @@ const PokedexUI: React.FC = () => {
       return
     }
 
-    // Reset justSelected flag for keys other than Enter
+    // Reset flag for non-Enter keys
     if (e.key !== 'Enter') {
       setJustSelected(false)
     }
 
+    // Keyboard navigation
     switch (e.key) {
       case 'ArrowDown':
-        e.preventDefault() // Prevent cursor movement
+        e.preventDefault()
         setSelectedIndex(prev => (prev < suggestions.length - 1 ? prev + 1 : 0))
         break
       case 'ArrowUp':
-        e.preventDefault() // Prevent cursor movement
+        e.preventDefault()
         setSelectedIndex(prev => (prev > 0 ? prev - 1 : suggestions.length - 1))
         break
       case 'Enter':
-        // If a suggestion is highlighted, select it instead of submitting
         if (selectedIndex >= 0) {
-          e.preventDefault() // Prevent form submission
+          e.preventDefault()
           handleSelectSuggestion(suggestions[selectedIndex])
         }
         break
@@ -125,42 +120,32 @@ const PokedexUI: React.FC = () => {
     }
   }
 
-  // Determine what to show in the main screen
-  const pokemonImage = dailyPokemon?.sprites?.other?.['official-artwork']?.front_default || dailyPokemon?.sprites?.front_default;
+  // Get pokemon image for display
+  const pokemonImage = dailyPokemon?.sprites?.other?.['official-artwork']?.front_default || 
+                      dailyPokemon?.sprites?.front_default;
 
-  // Conditionally render main screen content based on game status and device
+  // Render different content based on device and game status
   const renderMainScreenContent = () => {
     if (isMobile) {
-      // On mobile: show hint panel when not won, show pokemon when won
-      if (gameStatus === 'won') {
-        return (
-          <div className="pokemon-image-container">
+      return gameStatus === 'won' 
+        ? <div className="pokemon-image-container">
             <img src={pokemonImage} alt={dailyPokemon?.name} className="pokemon-image" />
           </div>
-        );
-      } else {
-        return (
-          <div className="mobile-hint-panel">
+        : <div className="mobile-hint-panel">
             <HintPanel />
-          </div>
-        );
-      }
+          </div>;
     } else {
-      // On desktop: show the regular unknown or won state
-      if (gameStatus === 'won') {
-        return (
-          <div className="pokemon-image-container">
+      return gameStatus === 'won' 
+        ? <div className="pokemon-image-container">
             <img src={pokemonImage} alt={dailyPokemon?.name} className="pokemon-image" />
           </div>
-        );
-      } else {
-        return <div className="unknown-pokemon">?</div>;
-      }
+        : <div className="unknown-pokemon">?</div>;
     }
   };
 
   return (
     <div className="pokedex">
+      {/* Left panel with main screen and input */}
       <div className="pokedex-left-panel">
         <div className="left-panel-top">
           <div className="blue-light"></div>
@@ -180,13 +165,14 @@ const PokedexUI: React.FC = () => {
               <div className="bottom-light green"></div>
             </div>
             <div className="sound-holes">
-              <div className={`sound-hole ${gameStatus === 'won' ? 'win-glow' : ''}`}></div>
-              <div className={`sound-hole ${gameStatus === 'won' ? 'win-glow' : ''}`}></div>
-              <div className={`sound-hole ${gameStatus === 'won' ? 'win-glow' : ''}`}></div>
-              <div className={`sound-hole ${gameStatus === 'won' ? 'win-glow' : ''}`}></div>
+              {[0, 1, 2, 3].map(i => (
+                <div key={i} className={`sound-hole ${gameStatus === 'won' ? 'win-glow' : ''}`}></div>
+              ))}
             </div>
           </div>
         </div>
+        
+        {/* Pokemon name input form */}
         <div className="guess-input-container">
           <form ref={formRef} onSubmit={handleSubmitGuess} className="guess-form">
             <input
@@ -204,6 +190,8 @@ const PokedexUI: React.FC = () => {
               autoFocus
               disabled={gameStatus !== 'playing'}
             />
+            
+            {/* Masterball submit button */}
             <div className="masterball-button-container">
               <button 
                 type="submit" 
@@ -225,6 +213,8 @@ const PokedexUI: React.FC = () => {
                 </div>
               </button>
             </div>
+            
+            {/* Suggestions dropdown */}
             {showSuggestions && suggestions.length > 0 && (
               <div className="suggestions-dropdown">
                 {suggestions.map((suggestion, index) => (
@@ -241,6 +231,8 @@ const PokedexUI: React.FC = () => {
           </form>
         </div>
       </div>
+      
+      {/* Right panel with hints and guesses */}
       <div className="pokedex-right-panel">
         <div className="right-panel-screen">
           {!isMobile && <HintPanel />}

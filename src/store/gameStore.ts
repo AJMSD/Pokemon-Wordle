@@ -15,59 +15,48 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
   pokemonList: [],
   guesses: [],
   hints: [
-    { type: 'ability' as const, value: '', revealed: false },
-    { type: 'generation' as const, value: '', revealed: false },
-    { type: 'type' as const, value: [], revealed: false }
+    { type: 'ability', value: '', revealed: false },
+    { type: 'generation', value: '', revealed: false },
+    { type: 'type', value: [], revealed: false }
   ],
   gameStatus: 'playing',
   isLoading: false,
   error: null,
   lastPlayedDate: null,
 
-  // Initialize the game state
+  // Loads or initializes the game state using localStorage when possible
   initializeGame: async () => {
     set({ isLoading: true, error: null });
     
     try {
-      // Get the current date as string
-      const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      const today = new Date().toISOString().slice(0, 10);
       const lastPlayed = localStorage.getItem('lastPlayedDate');
       
-      // If we already have state and it's the same day, restore previous game
+      // Restore previous game state if it's from the same day
       if (lastPlayed === today && localStorage.getItem('gameState')) {
         try {
           const savedState = JSON.parse(localStorage.getItem('gameState') || '{}');
-          set({ 
-            ...savedState,
-            isLoading: false,
-            lastPlayedDate: today
-          });
+          set({ ...savedState, isLoading: false, lastPlayedDate: today });
           return;
         } catch (e) {
           console.error('Failed to parse saved game state', e);
-          // Continue to initialize new game if restore fails
         }
       }
       
-      // 1. Fetch all Pokémon names
+      // Initialize a new game if no saved state or from a different day
       const pokemonList = await fetchAllPokemon();
-      
-      // 2. Get deterministic daily Pokémon
       const dailyIndex = getDailyPokemonIndex();
       const dailyPokemonName = pokemonList[dailyIndex % pokemonList.length];
-      
-      // 3. Fetch details for the daily Pokémon
       const dailyPokemon = await fetchPokemonDetails(dailyPokemonName);
       
-      // 4. Initialize new game state
       const newState: Partial<GameState> = { 
         dailyPokemon,
         pokemonList,
         guesses: [],
         hints: [
-          { type: 'ability' as const, value: '', revealed: false },
-          { type: 'generation' as const, value: '', revealed: false },
-          { type: 'type' as const, value: [], revealed: false }
+          { type: 'ability', value: '', revealed: false },
+          { type: 'generation', value: '', revealed: false },
+          { type: 'type', value: [], revealed: false }
         ],
         gameStatus: 'playing',
         isLoading: false,
@@ -76,7 +65,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       
       set(newState);
       
-      // Save initial state to localStorage
+      // Save state to localStorage
       localStorage.setItem('lastPlayedDate', today);
       localStorage.setItem('gameState', JSON.stringify({
         dailyPokemon,
@@ -94,51 +83,43 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
     }
   },
 
-  // Process a player's guess
+  // Processes a player's guess and updates game state accordingly
   makeGuess: async (guess: string) => {
-    const { 
-      dailyPokemon, 
-      guesses, 
-      pokemonList, 
-      gameStatus 
-    } = get();
+    const { dailyPokemon, guesses, pokemonList, gameStatus } = get();
     
-    // Skip if game not initialized or already won
     if (!dailyPokemon || gameStatus !== 'playing') {
       return false;
     }
     
     const normalizedGuess = normalizePokemonName(guess);
     
-    // Check if already guessed
+    // Validate guess hasn't been made before
     if (guesses.includes(normalizedGuess)) {
       set({ error: 'You already guessed this Pokémon!' });
       return false;
     }
     
-    // Validate if it's a real Pokémon
+    // Validate guess is a real Pokémon name
     if (!isValidPokemonName(normalizedGuess, pokemonList)) {
       set({ error: 'Not a valid Pokémon name!' });
       return false;
     }
     
-    // Add to guesses
     const newGuesses = [...guesses, normalizedGuess];
-    // Define proper types for new game status
-    let newGameStatus: 'playing' | 'won' | 'lost' = gameStatus;
+    let newGameStatus = gameStatus;
     
     // Check win condition
     if (isCorrectGuess(normalizedGuess, dailyPokemon)) {
       newGameStatus = 'won';
     } else if (newGuesses.length >= 10) {
-      // Check loss condition - 10 incorrect guesses
+      // Check loss condition after 10 guesses
       newGameStatus = 'lost';
     }
     
-    // Save game state before updating
+    // Update game state
     set({ guesses: newGuesses, error: null, gameStatus: newGameStatus });
     
-    // Save to localStorage
+    // Persist to localStorage
     const today = new Date().toISOString().slice(0, 10);
     localStorage.setItem('lastPlayedDate', today);
     localStorage.setItem('gameState', JSON.stringify({
@@ -147,7 +128,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       error: null
     }));
     
-    // Check if this attempt unlocks a new hint
+    // Reveal a hint if guess count is 3, 6, or 9
     if (newGuesses.length === 3 || newGuesses.length === 6 || newGuesses.length === 9) {
       await get().revealHint(newGuesses.length);
     }
@@ -155,7 +136,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
     return newGameStatus === 'won';
   },
 
-  // Reveal a hint based on the attempt number
+  // Reveals progressive hints based on guess attempt count
   revealHint: async (attemptNumber: number) => {
     const { dailyPokemon, hints } = get();
     
@@ -167,12 +148,12 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       set({ isLoading: true });
       
       if (attemptNumber === 3) {
-        // Reveal ability hint
+        // Reveal ability hint after 3rd attempt
         const primaryAbility = dailyPokemon.abilities?.[0]?.ability.name || 'Unknown';
         newHints[0] = { ...newHints[0], value: primaryAbility, revealed: true };
       }
       else if (attemptNumber === 6) {
-        // Reveal generation hint
+        // Reveal generation hint after 6th attempt
         if (dailyPokemon.species?.url) {
           const speciesData = await fetchPokemonSpecies(dailyPokemon.species.url);
           const generation = speciesData.generation.name;
@@ -180,14 +161,14 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
         }
       }
       else if (attemptNumber === 9) {
-        // Reveal type hint
+        // Reveal type hint after 9th attempt
         const types = dailyPokemon.types?.map(t => t.type.name) || ['Unknown'];
         newHints[2] = { ...newHints[2], value: types, revealed: true };
       }
       
       set({ hints: newHints, isLoading: false });
       
-      // Save updated state to localStorage
+      // Update localStorage with new hints
       localStorage.setItem('gameState', JSON.stringify({
         ...get(),
         isLoading: false,
@@ -201,21 +182,20 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
     }
   },
 
-  // Reset the game state
+  // Resets the current game while keeping the same Pokémon
   resetGame: () => {
-    // Only reset the game, but keep the same Pokémon (for testing purposes)
     set({
       guesses: [],
       hints: [
-        { type: 'ability' as const, value: '', revealed: false },
-        { type: 'generation' as const, value: '', revealed: false },
-        { type: 'type' as const, value: [], revealed: false }
+        { type: 'ability', value: '', revealed: false },
+        { type: 'generation', value: '', revealed: false },
+        { type: 'type', value: [], revealed: false }
       ],
       gameStatus: 'playing',
       error: null
     });
     
-    // Save to localStorage
+    // Update localStorage with reset state
     const today = new Date().toISOString().slice(0, 10);
     localStorage.setItem('lastPlayedDate', today);
     localStorage.setItem('gameState', JSON.stringify({
@@ -225,18 +205,15 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
     }));
   },
   
-  // Add missing selectNewPokemon method
+  // Selects a new random Pokémon (primarily for testing)
   selectNewPokemon: async () => {
     set({ isLoading: true, error: null });
     
     try {
       const { pokemonList } = get();
       
-      // Get a new random Pokémon
       const randomIndex = Math.floor(Math.random() * pokemonList.length);
       const randomPokemonName = pokemonList[randomIndex];
-      
-      // Fetch details for the new Pokémon
       const newPokemon = await fetchPokemonDetails(randomPokemonName);
       
       set({ 
@@ -244,9 +221,9 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
         isLoading: false,
         guesses: [],
         hints: [
-          { type: 'ability' as const, value: '', revealed: false },
-          { type: 'generation' as const, value: '', revealed: false },
-          { type: 'type' as const, value: [], revealed: false }
+          { type: 'ability', value: '', revealed: false },
+          { type: 'generation', value: '', revealed: false },
+          { type: 'type', value: [], revealed: false }
         ],
         gameStatus: 'playing'
       });
@@ -258,12 +235,12 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
     }
   },
   
-  // Reset the error state
+  // Clears current error state
   resetError: () => {
     set({ error: null });
   },
   
-  // Check for a new day and refresh game if needed
+  // Checks if it's a new day and resets game if needed
   checkForNewDay: () => {
     const { lastPlayedDate } = get();
     const today = new Date().toISOString().slice(0, 10);
@@ -274,7 +251,5 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
   }
 }));
 
-// Add a named export for the store
 export { useGameStore };
-
 export default useGameStore;

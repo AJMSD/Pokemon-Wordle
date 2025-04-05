@@ -5,13 +5,14 @@ const HintPanel: React.FC = () => {
   const { hints, dailyPokemon, guesses } = useGameStore()
   const [newlyRevealed, setNewlyRevealed] = useState<number[]>([])
   
-  // Track newly revealed hints to show the glow effect
+  // Track newly revealed hints to add visual feedback
   useEffect(() => {
     const justRevealed: number[] = []
     
     hints.forEach((hint, index) => {
       if (hint.revealed) {
-        const revealThreshold = (index + 1) * 3 // 3, 6, 9
+        // Hints are revealed at 3, 6, and 9 guesses
+        const revealThreshold = (index + 1) * 3
         if (guesses.length === revealThreshold) {
           justRevealed.push(index)
         }
@@ -19,9 +20,10 @@ const HintPanel: React.FC = () => {
     })
     
     if (justRevealed.length > 0) {
+      // Show animation for newly revealed hints
       setNewlyRevealed(justRevealed)
       
-      // Clear the newly revealed status after animation completes
+      // Clear animation state after animation completes
       const timer = setTimeout(() => {
         setNewlyRevealed([])
       }, 2000)
@@ -30,6 +32,7 @@ const HintPanel: React.FC = () => {
     }
   }, [hints, guesses.length])
   
+  // Initial message when no guesses yet
   if (guesses.length === 0) {
     return (
       <div className="pokedex-info">
@@ -43,6 +46,7 @@ const HintPanel: React.FC = () => {
       <h2 className="info-title">Pokédex Entry</h2>
       
       <div className="info-sections">
+        {/* Ability hint */}
         <HintItem 
           label="Ability" 
           value={dailyPokemon?.abilities?.[0]?.ability?.name || "Static"}
@@ -52,6 +56,7 @@ const HintPanel: React.FC = () => {
           isNew={newlyRevealed.includes(0)}
         />
         
+        {/* Generation hint */}
         <HintItem 
           label="Generation" 
           value={typeof hints[1].value === 'string' ? hints[1].value : "Generation I"}
@@ -61,6 +66,7 @@ const HintPanel: React.FC = () => {
           isNew={newlyRevealed.includes(1)}
         />
         
+        {/* Type hint */}
         <HintItem 
           label="Type(s)" 
           value={Array.isArray(hints[2].value) ? hints[2].value.join(", ") : "Electric"}
@@ -74,6 +80,7 @@ const HintPanel: React.FC = () => {
   )
 }
 
+// Props for individual hint items
 interface HintItemProps {
   label: string;
   value: string;
@@ -83,6 +90,7 @@ interface HintItemProps {
   isNew: boolean;
 }
 
+// Individual hint item component
 const HintItem: React.FC<HintItemProps> = ({ 
   label, 
   value, 

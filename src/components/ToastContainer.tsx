@@ -6,7 +6,9 @@ interface ToastContainerProps {
   removeToast: (id: string) => void;
 }
 
+// Container for rendering multiple toasts with proper positioning
 const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, removeToast }) => {
+  // Don't render anything if no toasts
   if (toasts.length === 0) return null;
   
   return (

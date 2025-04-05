@@ -10,11 +10,12 @@ function App() {
   const initializeGame = useGameStore(state => state.initializeGame)
   const { toasts, removeToast } = useToast()
   
+  // Initialize game on app load
   useEffect(() => {
     initializeGame()
   }, [initializeGame])
 
-  // Cast toasts to the expected type
+  // Prepare toasts for the toast container
   const typedToasts = toasts.map(toast => ({
     ...toast,
     onClose: toast.onClose || (() => removeToast(toast.id))
