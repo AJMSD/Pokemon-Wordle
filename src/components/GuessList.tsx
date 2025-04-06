@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react'
 import { useGameStore } from '../store/gameStore'
+import { getLetterMatchResult, normalizePokemonName } from '../utils/pokemonUtils'
 
 const GuessList: React.FC = () => {
   const { guesses, dailyPokemon } = useGameStore()
@@ -27,6 +28,9 @@ const GuessList: React.FC = () => {
       <ul className="guess-items">
         {guesses.map((guess, index) => {
           const isCorrect = guess === dailyPokemon?.name;
+          const normalizedGuess = normalizePokemonName(guess);
+          const normalizedTarget = dailyPokemon ? normalizePokemonName(dailyPokemon.name) : '';
+          const letterResults = getLetterMatchResult(normalizedGuess, normalizedTarget);
           
           return (
             <li 
@@ -36,6 +40,18 @@ const GuessList: React.FC = () => {
               <div className="guess-info">
                 <span className="guess-name">{guess}</span>
                 <span className="guess-number">#{index + 1}</span>
+              </div>
+              
+              {/* Letter match blocks */}
+              <div className="letter-blocks">
+                {normalizedGuess.split('').map((letter, letterIndex) => (
+                  <div 
+                    key={letterIndex}
+                    className={`letter-block ${letterResults[letterIndex]}`}
+                  >
+                    {letter}
+                  </div>
+                ))}
               </div>
               
               {/* Success message for correct guess */}

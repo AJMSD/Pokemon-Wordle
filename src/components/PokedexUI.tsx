@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useGameStore } from '../store/gameStore'
 import HintPanel from './HintPanel'
 import GuessList from './GuessList'
@@ -16,9 +16,13 @@ const PokedexUI: React.FC = () => {
   const [isMobile, setIsMobile] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
+  const suggestionsRef = useRef<HTMLDivElement>(null)
+  const suggestionItemsRef = useRef<Array<HTMLDivElement | null>>([])
   
-  // Get matching suggestions based on current input
-  const suggestions = currentGuess.length > 0 ? getSuggestions(currentGuess) : []
+  // Get matching suggestions based on current input - use useMemo to prevent recreation
+  const suggestions = useMemo(() => 
+    currentGuess.length > 0 ? getSuggestions(currentGuess) : [],
+  [currentGuess, getSuggestions]);
 
   // Handle responsive layout based on screen size
   useEffect(() => {
@@ -48,10 +52,38 @@ const PokedexUI: React.FC = () => {
     }
   }, [error, resetError, showError, gameStatus, addToast, dailyPokemon?.name])
 
-  // Reset selected suggestion when suggestions change
+  // Update refs array when suggestions change
   useEffect(() => {
-    setSelectedIndex(-1)
+    suggestionItemsRef.current = suggestionItemsRef.current.slice(0, suggestions.length);
+    // Only reset the selection index when the suggestion list actually changes content
+    // not when we're just navigating with keys
   }, [suggestions])
+
+  // Scroll selected item into view when selection changes
+  useEffect(() => {
+    if (selectedIndex >= 0 && selectedIndex < suggestions.length && 
+        suggestionItemsRef.current[selectedIndex] && suggestionsRef.current) {
+      const container = suggestionsRef.current;
+      const selectedItem = suggestionItemsRef.current[selectedIndex];
+      
+      if (selectedItem) {
+        // Check if item is not fully visible in the container
+        const itemTop = selectedItem.offsetTop;
+        const itemBottom = itemTop + selectedItem.offsetHeight;
+        const containerTop = container.scrollTop;
+        const containerBottom = containerTop + container.offsetHeight;
+        
+        // Scroll container if necessary
+        if (itemTop < containerTop) {
+          // Item is above visible area
+          container.scrollTop = itemTop;
+        } else if (itemBottom > containerBottom) {
+          // Item is below visible area
+          container.scrollTop = itemBottom - container.offsetHeight;
+        }
+      }
+    }
+  }, [selectedIndex, suggestions.length]);
 
   // Handle form submission
   const handleSubmitGuess = (e: React.FormEvent) => {
@@ -62,6 +94,7 @@ const PokedexUI: React.FC = () => {
     setCurrentGuess('')
     setShowSuggestions(false)
     setJustSelected(false)
+    setSelectedIndex(-1) // Reset selection index after submission
   }
 
   // Handle suggestion selection
@@ -86,7 +119,7 @@ const PokedexUI: React.FC = () => {
     // Handle submission after selection
     if (justSelected && e.key === 'Enter') {
       e.preventDefault()
-      formRef.current?.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
+      formRef.current?.requestSubmit()
       setJustSelected(false)
       return
     }
@@ -100,11 +133,25 @@ const PokedexUI: React.FC = () => {
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault()
-        setSelectedIndex(prev => (prev < suggestions.length - 1 ? prev + 1 : 0))
+        setSelectedIndex(prev => {
+          // When no item is selected (-1) or at the end, loop to the beginning
+          if (prev === -1 || prev >= suggestions.length - 1) {
+            return 0;
+          }
+          // Otherwise move to the next item
+          return prev + 1;
+        })
         break
       case 'ArrowUp':
         e.preventDefault()
-        setSelectedIndex(prev => (prev > 0 ? prev - 1 : suggestions.length - 1))
+        setSelectedIndex(prev => {
+          // When no item is selected (-1) or at the beginning, loop to the end
+          if (prev <= 0) {
+            return suggestions.length - 1;
+          }
+          // Otherwise move to the previous item
+          return prev - 1;
+        })
         break
       case 'Enter':
         if (selectedIndex >= 0) {
@@ -182,6 +229,7 @@ const PokedexUI: React.FC = () => {
               onChange={(e) => {
                 setCurrentGuess(e.target.value)
                 setShowSuggestions(e.target.value.length > 0)
+                setSelectedIndex(-1) // Only reset when the input text changes
               }}
               onKeyDown={handleKeyDown}
               className="guess-input"
@@ -216,12 +264,17 @@ const PokedexUI: React.FC = () => {
             
             {/* Suggestions dropdown */}
             {showSuggestions && suggestions.length > 0 && (
-              <div className="suggestions-dropdown">
+              <div 
+                ref={suggestionsRef}
+                className="suggestions-dropdown"
+              >
                 {suggestions.map((suggestion, index) => (
                   <div
                     key={index}
-                    className={`suggestion-item ${index === selectedIndex ? 'bg-gray-200' : ''}`}
+                    ref={el => suggestionItemsRef.current[index] = el}
+                    className={`suggestion-item ${index === selectedIndex ? 'active-suggestion' : ''}`}
                     onClick={() => handleSelectSuggestion(suggestion)}
+                    onMouseEnter={() => setSelectedIndex(index)}
                   >
                     {suggestion}
                   </div>

@@ -63,6 +63,7 @@
   margin: 0 auto;
   padding: 10px;
   gap: 10px;
+  min-height: 700px; /* Add a minimum height to maintain consistency */
 }
 
 /* Left panel styles */
@@ -74,6 +75,9 @@
   max-width: 400px;
   box-shadow: -3px 2px 10px 3px rgba(0,0,0,0.3);
   position: relative;
+  height: 700px; /* Fixed height for consistency */
+  display: flex;
+  flex-direction: column;
 }
 
 .left-panel-top {
@@ -137,6 +141,9 @@
   background-color: #B0B0B0;
   border-radius: 5px;
   margin-bottom: 15px;
+  flex-grow: 1; /* Allow this to take available space */
+  display: flex;
+  flex-direction: column;
 }
 
 .main-screen {
@@ -148,6 +155,7 @@
   justify-content: center;
   justify-content: space-between;
   margin-top: 10px;
+  flex-grow: 1; /* Let it grow to fill available space */
 }
 
 .pokemon-image-container {
@@ -246,6 +254,7 @@
 
 .guess-input-container {
   padding: 15px;
+  margin-top: auto; /* Push to the bottom of the container */
 }
 
 .guess-form {
@@ -294,7 +303,7 @@
   background-color: #f5f5f5;
 }
 
-.suggestion-item.bg-gray-200 {
+.suggestion-item.active-suggestion {
   background-color: #edf2f7;
   border-left: 3px solid #DC0A2D;
 }
@@ -322,6 +331,9 @@
   width: 100%;
   max-width: 500px;
   box-shadow: -3px 2px 10px 3px rgba(0,0,0,0.3);
+  height: 700px; /* Fixed height for consistency */
+  display: flex;
+  flex-direction: column;
 }
 
 .right-panel-screen {
@@ -331,17 +343,46 @@
   padding: 10px;
   margin-bottom: 15px;
   min-height: 150px;
+  flex-shrink: 0; /* Prevent this from shrinking */
 }
 
 .guesses-container {
   background-color: #f8f8f8;
   border-radius: 5px;
   padding: 15px;
-  max-height: 430px;
-  overflow-y: auto;
+  max-height: 100%; /* Use all available space */
+  flex-grow: 1; /* Allow it to grow */
+  overflow-y: auto; /* Add scroll when needed */
+  display: flex;
+  flex-direction: column;
 }
 
 /* Mobile responsiveness */
+@media (max-width: 768px) {
+  .pokedex {
+    flex-direction: column;
+    align-items: center;
+    min-height: auto; /* Allow it to size based on content on mobile */
+  }
+  
+  .pokedex-left-panel,
+  .pokedex-right-panel {
+    max-width: 100%;
+    height: auto; /* Auto height on mobile */
+    min-height: 500px; /* Still maintain a minimum height */
+  }
+  
+  .main-screen {
+    height: 200px;
+    flex-grow: 0; /* Don't grow on mobile */
+  }
+  
+  .guesses-container {
+    max-height: 350px; /* Fixed height on mobile */
+    flex-grow: 0; /* Don't grow on mobile */
+  }
+}
+
 @media (max-width: 768px) {
   .pokedex {
     flex-direction: column;
@@ -716,5 +757,66 @@ header h1 {
 @media (max-width: 768px) {
   .fixed.bottom-20 {
     bottom: 5rem;
+  }
+}
+
+/* Letter match blocks styling */
+.letter-blocks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+  margin-bottom: 4px;
+}
+
+.letter-block {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  font-weight: bold;
+  text-transform: uppercase;
+  color: white;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
+  transition: transform 0.1s ease;
+}
+
+.letter-block:hover {
+  transform: scale(1.05);
+}
+
+.letter-block.correct {
+  background-color: #47A047; /* grass-type green for correct letters */
+  border: 1px solid #378037;
+}
+
+.letter-block.present {
+  background-color: #FFDE00; /* pokemon yellow for present but wrong position */
+  border: 1px solid #B3A125;
+  color: #333;
+  text-shadow: none;
+}
+
+.letter-block.absent {
+  background-color: #616161; /* pokeball button gray for absent letters */
+  border: 1px solid #4a4a4a;
+}
+
+/* Mobile responsiveness for letter blocks */
+@media (max-width: 768px) {
+  .letter-block {
+    width: 28px;
+    height: 28px;
+    font-size: 0.9em;
+  }
+}
+
+@media (max-width: 480px) {
+  .letter-block {
+    width: 24px;
+    height: 24px;
+    font-size: 0.8em;
   }
 }
