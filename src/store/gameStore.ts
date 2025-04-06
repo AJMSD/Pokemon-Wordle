@@ -106,7 +106,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
     }
     
     const newGuesses = [...guesses, normalizedGuess];
-    let newGameStatus = gameStatus;
+    let newGameStatus: 'playing' | 'won' | 'lost' = gameStatus;
     
     // Check win condition
     if (isCorrectGuess(normalizedGuess, dailyPokemon)) {
