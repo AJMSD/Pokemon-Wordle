@@ -1,0 +1,284 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { checkRateLimit } from '../_shared/rateLimit.ts';
+
+const MAX_GUESSES = 10;
+const HINT_THRESHOLDS = { ability: 3, generation: 6, type: 9 };
+
+function getClientIP(req: Request): string {
+  return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+}
+
+function normalizeName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(
+      /-mega$|-gmax$|-alola$|-galar$|-hisui$|-paldea$|-green-plumage$|-incarnate$|-f$|-m$|-shield$|-single-strike$|-normal$|-plant$|-altered$|-land$|-red-striped$|-standard$|-ordinary$|-aria$|-male$|-average$|-50$|-baile$|-midday$|-solo$|-red-meteor$|-disguised$|-amped$|-full-belly$|-family-of-four$|-zero$|-curly$|-two-segment$|-ice$/,
+      ''
+    );
+}
+
+async function isValidPokemon(name: string): Promise<boolean> {
+  try {
+    const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${name}`);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+Deno.serve(async (req: Request) => {
+  const cors = handleCors(req);
+  if (cors) return cors;
+
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  const supabaseAdmin = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  );
+
+  try {
+    const body = await req.json();
+    const { guess, session_version, puzzle_date_key, guest_id } = body;
+
+    if (!guess || !puzzle_date_key) {
+      return new Response(JSON.stringify({ error: 'Missing required fields' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Determine caller identity
+    let userId: string | null = null;
+    const authHeader = req.headers.get('Authorization');
+
+    if (authHeader) {
+      const supabaseUser = createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_ANON_KEY')!,
+        { global: { headers: { Authorization: authHeader } } }
+      );
+      const { data: { user } } = await supabaseUser.auth.getUser();
+      userId = user?.id ?? null;
+    }
+
+    const isGuest = !userId;
+    if (isGuest && !guest_id) {
+      return new Response(JSON.stringify({ error: 'guest_id required for unauthenticated requests' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Rate limit: 10 guesses/minute per user/guest
+    const rateLimitKey = userId
+      ? `submit-guess:user:${userId}`
+      : `submit-guess:ip:${getClientIP(req)}`;
+
+    const { allowed, retryAfter } = await checkRateLimit(supabaseAdmin, rateLimitKey, 10, 60);
+    if (!allowed) {
+      return new Response(
+        JSON.stringify({ error: 'Rate limit exceeded', retry_after: retryAfter }),
+        {
+          status: 429,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': String(retryAfter) },
+        }
+      );
+    }
+
+    // Load today's puzzle
+    const { data: puzzle } = await supabaseAdmin
+      .from('daily_puzzles')
+      .select('id, pokemon_name, pokemon_data')
+      .eq('puzzle_date_key', puzzle_date_key)
+      .single();
+
+    if (!puzzle) {
+      return new Response(JSON.stringify({ error: 'Puzzle not found for date' }), {
+        status: 404,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Load or create session
+    const sessionFilter = isGuest
+      ? { guest_id: guest_id }
+      : { user_id: userId };
+
+    let { data: session } = await supabaseAdmin
+      .from('daily_sessions')
+      .select('*')
+      .match({ ...sessionFilter, puzzle_date_key })
+      .single();
+
+    if (!session) {
+      const { data: newSession } = await supabaseAdmin
+        .from('daily_sessions')
+        .insert({
+          ...sessionFilter,
+          puzzle_date_key,
+          puzzle_id: puzzle.id,
+          guesses: [],
+          hint_flags: { ability: false, generation: false, type: false },
+          completion_state: 'playing',
+          version: 1,
+        })
+        .select()
+        .single();
+      session = newSession;
+    }
+
+    // Optimistic concurrency check
+    if (session_version !== undefined && session.version !== session_version) {
+      return new Response(
+        JSON.stringify({ error: 'stale_session', current_version: session.version }),
+        {
+          status: 409,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    // Reject if game already complete
+    if (session.completion_state !== 'playing') {
+      return new Response(
+        JSON.stringify({ error: 'Game already completed', completion_state: session.completion_state }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    const normalizedGuess = normalizeName(guess);
+
+    // Validate duplicate
+    if (session.guesses.includes(normalizedGuess)) {
+      return new Response(JSON.stringify({ error: 'Duplicate guess' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Validate it's a real Pokémon
+    const valid = await isValidPokemon(normalizedGuess);
+    if (!valid) {
+      return new Response(JSON.stringify({ error: 'Not a valid Pokémon name' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const newGuesses = [...session.guesses, normalizedGuess];
+    const isCorrect = normalizedGuess === normalizeName(puzzle.pokemon_name);
+    const isExhausted = newGuesses.length >= MAX_GUESSES;
+
+    let completionState: 'playing' | 'won' | 'lost' = 'playing';
+    if (isCorrect) completionState = 'won';
+    else if (isExhausted) completionState = 'lost';
+
+    // Update hint flags
+    const hintFlags = { ...session.hint_flags };
+    if (newGuesses.length >= HINT_THRESHOLDS.ability) hintFlags.ability = true;
+    if (newGuesses.length >= HINT_THRESHOLDS.generation) hintFlags.generation = true;
+    if (newGuesses.length >= HINT_THRESHOLDS.type) hintFlags.type = true;
+
+    const newVersion = session.version + 1;
+
+    await supabaseAdmin
+      .from('daily_sessions')
+      .update({
+        guesses: newGuesses,
+        hint_flags: hintFlags,
+        completion_state: completionState,
+        version: newVersion,
+      })
+      .match({ ...sessionFilter, puzzle_date_key });
+
+    // On completion, archive result and update stats (auth users only)
+    if (completionState !== 'playing' && !isGuest && userId) {
+      await supabaseAdmin.from('daily_results').upsert({
+        user_id: userId,
+        puzzle_date_key,
+        pokemon_name: puzzle.pokemon_name,
+        guesses: newGuesses,
+        guess_count: newGuesses.length,
+        result: completionState,
+      });
+
+      const { data: stats } = await supabaseAdmin
+        .from('user_stats')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+
+      if (stats) {
+        const gamesPlayed = (stats.games_played ?? 0) + 1;
+        const gamesWon = (stats.games_won ?? 0) + (completionState === 'won' ? 1 : 0);
+        const dist = { ...stats.guess_distribution };
+        if (completionState === 'won') {
+          const key = String(newGuesses.length);
+          dist[key] = (dist[key] ?? 0) + 1;
+        }
+
+        // Streak calculation
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayKey = yesterday.toISOString().slice(0, 10);
+        const currentStreak =
+          completionState === 'won'
+            ? stats.last_played_date === yesterdayKey
+              ? (stats.current_streak ?? 0) + 1
+              : 1
+            : 0;
+        const maxStreak = Math.max(stats.max_streak ?? 0, currentStreak);
+
+        await supabaseAdmin.from('user_stats').update({
+          games_played: gamesPlayed,
+          games_won: gamesWon,
+          current_streak: currentStreak,
+          max_streak: maxStreak,
+          last_played_date: puzzle_date_key,
+          guess_distribution: dist,
+        }).eq('user_id', userId);
+      }
+    }
+
+    // Build hints to return based on revealed flags
+    const hints: Record<string, unknown> = {};
+    if (hintFlags.ability) hints.ability = puzzle.pokemon_data.ability;
+    if (hintFlags.generation) hints.generation = puzzle.pokemon_data.generation;
+    if (hintFlags.type) hints.types = puzzle.pokemon_data.types;
+
+    // Return answer only when game is complete
+    const responseBody: Record<string, unknown> = {
+      guesses: newGuesses,
+      hint_flags: hintFlags,
+      hints,
+      completion_state: completionState,
+      version: newVersion,
+    };
+
+    if (completionState !== 'playing') {
+      responseBody.pokemon_name = puzzle.pokemon_name;
+    }
+
+    return new Response(JSON.stringify(responseBody), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  } catch (err) {
+    console.error('submit-guess error:', err);
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+});
