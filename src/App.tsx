@@ -1,7 +1,9 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useGameStore } from './store/gameStore'
 import Header from './components/Header'
 import PokedexUI from './components/PokedexUI'
+import CollectionPage from './components/CollectionPage'
+import BallUnlockModal from './components/BallUnlockModal'
 import ToastContainer from './components/ToastContainer'
 import useToast from './hooks/useToast'
 import { ToastProps } from './components/Toast'
@@ -9,13 +11,13 @@ import { ToastProps } from './components/Toast'
 function App() {
   const initializeGame = useGameStore(state => state.initializeGame)
   const { toasts, removeToast } = useToast()
-  
-  // Initialize game on app load
+  const [showCollection, setShowCollection] = useState(false)
+  const [unlockedBall, setUnlockedBall] = useState<{ name: string; id: string } | null>(null)
+
   useEffect(() => {
     initializeGame()
   }, [initializeGame])
 
-  // Prepare toasts for the toast container
   const typedToasts = toasts.map(toast => ({
     ...toast,
     onClose: toast.onClose || (() => removeToast(toast.id))
@@ -23,11 +25,20 @@ function App() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 bg-white/50 backdrop-blur-sm rounded-lg shadow-lg my-4">
-      <Header />
+      <Header onShowCollection={() => setShowCollection(true)} />
       <main>
-        <PokedexUI />
+        {showCollection
+          ? <CollectionPage onBack={() => setShowCollection(false)} />
+          : <PokedexUI />
+        }
       </main>
       <ToastContainer toasts={typedToasts} removeToast={removeToast} />
+      <BallUnlockModal
+        visible={!!unlockedBall}
+        ballName={unlockedBall?.name ?? ''}
+        ballId={unlockedBall?.id ?? ''}
+        onClose={() => setUnlockedBall(null)}
+      />
     </div>
   )
 }

@@ -1,8 +1,12 @@
 import React from 'react'
 
-const Header: React.FC = () => {
+interface HeaderProps {
+  onShowCollection?: () => void
+}
+
+const Header: React.FC<HeaderProps> = ({ onShowCollection }) => {
   return (
-    <header className="mb-8 text-center">
+    <header className="mb-8 text-center relative">
       <h1 className="text-4xl md:text-5xl font-bold text-pokemon-red mb-2 tracking-wide">
         Wurmple
         <span className="inline-block ml-2 transform -rotate-12">
@@ -14,6 +18,19 @@ const Header: React.FC = () => {
       <p className="text-gray-600 md:text-lg mb-1">
         Guess the Daily Pokémon from the Pokédex!
       </p>
+      {onShowCollection && (
+        <div className="absolute top-0 right-0 flex items-center gap-2">
+          <span className="text-xs bg-gray-100 text-gray-500 border border-gray-200 rounded-full px-2 py-0.5 font-medium">
+            Poké Ball
+          </span>
+          <button
+            onClick={onShowCollection}
+            className="text-sm font-semibold text-pokemon-red hover:underline"
+          >
+            Collection
+          </button>
+        </div>
+      )}
     </header>
   )
 }

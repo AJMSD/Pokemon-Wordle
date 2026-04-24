@@ -90,25 +90,25 @@
 ## Phase 4: Ball Progression System
 
 ### Tasks
-- [ ] Create ball_catalog with all Poké Ball, Great Ball, Ultra Ball, Master Ball entries
-- [ ] Implement streak-based ball progression: Poké Ball (0-2), Great Ball (3+), Ultra Ball (7+), Master Ball (14+)
-- [ ] Create achievement balls: Quick Ball, Timer Ball, Luxury Ball, Net Ball, Heal Ball
-- [ ] Implement Quick Ball unlock: solved in 1 or 2 guesses
-- [ ] Implement Timer Ball unlock: solved on 10th guess
-- [ ] Implement Luxury Ball unlock: profile setup + verified + 7-day participation streak
-- [ ] Implement Net Ball unlock: 10 cumulative Water/Bug-type daily answers
-- [ ] Implement Heal Ball unlock: 3 wins after losses
-- [ ] Build ball_unlocks table and tracking
-- [ ] Implement display ball selection (can only display current streak tier or any unlocked achievement ball)
-- [ ] Build ball unlock celebration/notification on the frontend
-- [ ] Create collection page data endpoint showing locked balls as silhouettes
+- [x] Create ball_catalog with all Poké Ball, Great Ball, Ultra Ball, Master Ball entries
+- [x] Implement streak-based ball progression: Poké Ball (0-2), Great Ball (3+), Ultra Ball (7+), Master Ball (14+)
+- [x] Create achievement balls: Quick Ball, Timer Ball, Luxury Ball, Net Ball, Heal Ball
+- [x] Implement Quick Ball unlock: solved in 1 or 2 guesses
+- [x] Implement Timer Ball unlock: solved on 10th guess
+- [x] Implement Luxury Ball unlock: profile setup + verified + 7-day participation streak
+- [x] Implement Net Ball unlock: 10 cumulative Water/Bug-type daily answers
+- [x] Implement Heal Ball unlock: 3 wins after losses
+- [x] Build ball_unlocks table and tracking
+- [x] Implement display ball selection (can only display current streak tier or any unlocked achievement ball)
+- [x] Build ball unlock celebration/notification on the frontend
+- [x] Create collection page data endpoint showing locked balls as silhouettes
 
 ### Acceptance Criteria
-- [ ] Users automatically reach new streak tiers as streak progresses
-- [ ] Achievement balls unlock when conditions met
-- [ ] Display ball cannot be set to locked or below current streak tier
-- [ ] Unlocked balls remain even if streak breaks
-- [ ] Collection endpoint returns locked balls with hint copy for display
+- [x] Users automatically reach new streak tiers as streak progresses
+- [x] Achievement balls unlock when conditions met
+- [x] Display ball cannot be set to locked or below current streak tier
+- [x] Unlocked balls remain even if streak breaks
+- [x] Collection endpoint returns locked balls with hint copy for display
 
 ---
 

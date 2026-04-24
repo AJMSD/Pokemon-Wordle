@@ -1,6 +1,17 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { checkRateLimit } from '../_shared/rateLimit.ts';
+
+async function awardBall(
+  supabaseAdmin: SupabaseClient,
+  userId: string,
+  ballId: string
+): Promise<boolean> {
+  const { error } = await supabaseAdmin
+    .from('ball_unlocks')
+    .insert({ user_id: userId, ball_id: ballId });
+  return !error; // false if already unlocked (unique violation)
+}
 
 const MAX_GUESSES = 10;
 const HINT_THRESHOLDS = { ability: 3, generation: 6, type: 9 };
@@ -167,6 +178,8 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    const newlyUnlocked: string[] = [];
+
     // Participation stat: increment on first guess of the day (auth + verified only)
     if (!isGuest && userId && isVerified && session.guesses.length === 0) {
       const { data: stats } = await supabaseAdmin
@@ -181,12 +194,35 @@ Deno.serve(async (req: Request) => {
           stats.last_participation_date === yesterdayJST
             ? (stats.participation_streak ?? 0) + 1
             : 1;
+
+        // Net Ball: track Water/Bug-type days
+        const types: string[] = (puzzle.pokemon_data as { types?: string[] }).types ?? [];
+        const isWaterOrBug = types.some(t => t === 'water' || t === 'bug');
+        const newWaterBugCount = (stats.water_bug_daily_wins ?? 0) + (isWaterOrBug ? 1 : 0);
+
         await supabaseAdmin.from('user_stats').update({
           total_participations: (stats.total_participations ?? 0) + 1,
           participation_streak: partStreak,
           max_participation_streak: Math.max(stats.max_participation_streak ?? 0, partStreak),
           last_participation_date: puzzle_date_key,
+          ...(isWaterOrBug ? { water_bug_daily_wins: newWaterBugCount } : {}),
         }).eq('user_id', userId);
+
+        if (isWaterOrBug && newWaterBugCount >= 10) {
+          if (await awardBall(supabaseAdmin, userId, 'net-ball')) newlyUnlocked.push('net-ball');
+        }
+
+        // Luxury Ball: verified + profile exists + participation_streak >= 7
+        if (partStreak >= 7) {
+          const { data: profile } = await supabaseAdmin
+            .from('profiles')
+            .select('user_id')
+            .eq('user_id', userId)
+            .single();
+          if (profile) {
+            if (await awardBall(supabaseAdmin, userId, 'luxury-ball')) newlyUnlocked.push('luxury-ball');
+          }
+        }
       }
     }
 
@@ -270,6 +306,11 @@ Deno.serve(async (req: Request) => {
             : 0;
         const maxStreak = Math.max(stats.max_streak ?? 0, currentStreak);
 
+        // Heal Ball: track consecutive wins after a loss
+        const newWinsAfterLoss = completionState === 'won'
+          ? (stats.wins_after_loss_streak ?? 0) + 1
+          : 0;
+
         await supabaseAdmin.from('user_stats').update({
           games_won: gamesWon,
           total_losses: totalLosses,
@@ -277,7 +318,23 @@ Deno.serve(async (req: Request) => {
           max_streak: maxStreak,
           last_played_date: puzzle_date_key,
           guess_distribution: dist,
+          wins_after_loss_streak: newWinsAfterLoss,
         }).eq('user_id', userId);
+
+        // Quick Ball: won in 1 or 2 guesses
+        if (completionState === 'won' && newGuesses.length <= 2) {
+          if (await awardBall(supabaseAdmin, userId, 'quick-ball')) newlyUnlocked.push('quick-ball');
+        }
+
+        // Timer Ball: won on exactly the 10th guess
+        if (completionState === 'won' && newGuesses.length === 10) {
+          if (await awardBall(supabaseAdmin, userId, 'timer-ball')) newlyUnlocked.push('timer-ball');
+        }
+
+        // Heal Ball: 3 consecutive wins after a loss
+        if (newWinsAfterLoss >= 3) {
+          if (await awardBall(supabaseAdmin, userId, 'heal-ball')) newlyUnlocked.push('heal-ball');
+        }
       }
     }
 
@@ -299,6 +356,8 @@ Deno.serve(async (req: Request) => {
     if (completionState !== 'playing') {
       responseBody.pokemon_name = puzzle.pokemon_name;
     }
+
+    responseBody.newly_unlocked_balls = newlyUnlocked;
 
     return new Response(JSON.stringify(responseBody), {
       status: 200,
