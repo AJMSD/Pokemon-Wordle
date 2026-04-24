@@ -28,6 +28,14 @@ async function isValidPokemon(name: string): Promise<boolean> {
   }
 }
 
+function getTodayJST(): string {
+  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+function getYesterdayJST(): string {
+  return new Date(Date.now() + 9 * 3600 * 1000 - 24 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
 Deno.serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
@@ -55,8 +63,9 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Determine caller identity
+    // Determine caller identity and verification status
     let userId: string | null = null;
+    let isVerified = false;
     const authHeader = req.headers.get('Authorization');
 
     if (authHeader) {
@@ -67,6 +76,7 @@ Deno.serve(async (req: Request) => {
       );
       const { data: { user } } = await supabaseUser.auth.getUser();
       userId = user?.id ?? null;
+      isVerified = !!user?.email_confirmed_at;
     }
 
     const isGuest = !userId;
@@ -157,6 +167,29 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Participation stat: increment on first guess of the day (auth + verified only)
+    if (!isGuest && userId && isVerified && session.guesses.length === 0) {
+      const { data: stats } = await supabaseAdmin
+        .from('user_stats')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+
+      if (stats && stats.last_participation_date !== puzzle_date_key) {
+        const yesterdayJST = getYesterdayJST();
+        const partStreak =
+          stats.last_participation_date === yesterdayJST
+            ? (stats.participation_streak ?? 0) + 1
+            : 1;
+        await supabaseAdmin.from('user_stats').update({
+          total_participations: (stats.total_participations ?? 0) + 1,
+          participation_streak: partStreak,
+          max_participation_streak: Math.max(stats.max_participation_streak ?? 0, partStreak),
+          last_participation_date: puzzle_date_key,
+        }).eq('user_id', userId);
+      }
+    }
+
     const normalizedGuess = normalizeName(guess);
 
     // Validate duplicate
@@ -202,8 +235,8 @@ Deno.serve(async (req: Request) => {
       })
       .match({ ...sessionFilter, puzzle_date_key });
 
-    // On completion, archive result and update stats (auth users only)
-    if (completionState !== 'playing' && !isGuest && userId) {
+    // On completion, archive result and update stats (auth + verified users only)
+    if (completionState !== 'playing' && !isGuest && userId && isVerified) {
       await supabaseAdmin.from('daily_results').upsert({
         user_id: userId,
         puzzle_date_key,
@@ -220,29 +253,26 @@ Deno.serve(async (req: Request) => {
         .single();
 
       if (stats) {
-        const gamesPlayed = (stats.games_played ?? 0) + 1;
         const gamesWon = (stats.games_won ?? 0) + (completionState === 'won' ? 1 : 0);
+        const totalLosses = (stats.total_losses ?? 0) + (completionState === 'lost' ? 1 : 0);
         const dist = { ...stats.guess_distribution };
         if (completionState === 'won') {
           const key = String(newGuesses.length);
           dist[key] = (dist[key] ?? 0) + 1;
         }
 
-        // Streak calculation
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayKey = yesterday.toISOString().slice(0, 10);
+        const yesterdayJST = getYesterdayJST();
         const currentStreak =
           completionState === 'won'
-            ? stats.last_played_date === yesterdayKey
+            ? stats.last_played_date === yesterdayJST
               ? (stats.current_streak ?? 0) + 1
               : 1
             : 0;
         const maxStreak = Math.max(stats.max_streak ?? 0, currentStreak);
 
         await supabaseAdmin.from('user_stats').update({
-          games_played: gamesPlayed,
           games_won: gamesWon,
+          total_losses: totalLosses,
           current_streak: currentStreak,
           max_streak: maxStreak,
           last_played_date: puzzle_date_key,

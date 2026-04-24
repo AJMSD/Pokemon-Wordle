@@ -4,7 +4,8 @@ export async function markMissedSessions(
   supabaseAdmin: SupabaseClient,
   userId: string | null,
   guestId: string | null,
-  todayKey: string
+  todayKey: string,
+  isVerified: boolean = false
 ): Promise<void> {
   const filter = userId ? { user_id: userId } : { guest_id: guestId };
 
@@ -23,28 +24,19 @@ export async function markMissedSessions(
       .eq('id', s.id);
   }
 
-  // Update streak for authenticated users only
-  if (userId) {
-    const { data: stats } = await supabaseAdmin
+  if (userId && isVerified) {
+    const latestMissed = staleSessions
+      .map((s) => s.puzzle_date_key)
+      .sort()
+      .at(-1)!;
+
+    await supabaseAdmin
       .from('user_stats')
-      .select('games_played, current_streak, last_played_date')
-      .eq('user_id', userId)
-      .single();
-
-    if (stats) {
-      const latestMissed = staleSessions
-        .map((s) => s.puzzle_date_key)
-        .sort()
-        .at(-1)!;
-
-      await supabaseAdmin
-        .from('user_stats')
-        .update({
-          games_played: (stats.games_played ?? 0) + staleSessions.length,
-          current_streak: 0,
-          last_played_date: latestMissed,
-        })
-        .eq('user_id', userId);
-    }
+      .update({
+        current_streak: 0,
+        participation_streak: 0,
+        last_played_date: latestMissed,
+      })
+      .eq('user_id', userId);
   }
 }

@@ -39,6 +39,7 @@ Deno.serve(async (req: Request) => {
     let userId: string | null = null;
     const authHeader = req.headers.get('Authorization');
 
+    let isVerified = false;
     if (authHeader) {
       const supabaseUser = createClient(
         Deno.env.get('SUPABASE_URL')!,
@@ -47,6 +48,7 @@ Deno.serve(async (req: Request) => {
       );
       const { data: { user } } = await supabaseUser.auth.getUser();
       userId = user?.id ?? null;
+      isVerified = !!user?.email_confirmed_at;
     }
 
     const isGuest = !userId;
@@ -74,7 +76,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Mark any stale sessions as missed
-    await markMissedSessions(supabaseAdmin, userId, isGuest ? guest_id : null, puzzle_date_key);
+    await markMissedSessions(supabaseAdmin, userId, isGuest ? guest_id : null, puzzle_date_key, isVerified);
 
     // Load puzzle
     const { data: puzzle } = await supabaseAdmin
