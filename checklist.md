@@ -141,24 +141,24 @@
 ## Phase 6: Dashboard and UI Components
 
 ### Tasks
-- [ ] Build dashboard hero section: avatar, username, current display ball, win streak, best streak, win rate
-- [ ] Create supporting stat cards: participation streak, total games, wins/losses, best guess summary, achievement summary
-- [ ] Implement trainer-card styling with visual hierarchy and compact card layout
-- [ ] Build responsive dashboard layout working equally on mobile and desktop
-- [ ] Create collection page with unlocked balls, locked silhouettes, and hint copy
-- [ ] Implement ball display selection UI with validation
-- [ ] Build ball unlock celebration modal/animation
-- [ ] Create new-streak-tier prompt (suggest switching to new ball)
-- [ ] Implement game screen header showing current streak, best streak, current display ball
-- [ ] Build themed loading states and error messages
+- [x] Build dashboard hero section: avatar, username, current display ball, win streak, best streak, win rate
+- [x] Create supporting stat cards: participation streak, total games, wins/losses, best guess summary, achievement summary
+- [x] Implement trainer-card styling with visual hierarchy and compact card layout
+- [x] Build responsive dashboard layout working equally on mobile and desktop
+- [x] Create collection page with unlocked balls, locked silhouettes, and hint copy
+- [x] Implement ball display selection UI with validation
+- [x] Build ball unlock celebration modal/animation
+- [x] Create new-streak-tier prompt (suggest switching to new ball)
+- [x] Implement game screen header showing current streak, best streak, current display ball
+- [x] Build themed loading states and error messages
 
 ### Acceptance Criteria
-- [ ] Dashboard displays all required stats in trainer-card format
-- [ ] Mobile and desktop layouts are equally usable
-- [ ] Collection page shows locked balls as silhouettes with suggestive hints
-- [ ] Ball unlock celebrations are visually distinct from regular interactions
-- [ ] New streak tier prompts appear and remember user choice
-- [ ] All themed copy remains readable and conveys clear meaning
+- [x] Dashboard displays all required stats in trainer-card format
+- [x] Mobile and desktop layouts are equally usable
+- [x] Collection page shows locked balls as silhouettes with suggestive hints
+- [x] Ball unlock celebrations are visually distinct from regular interactions
+- [x] New streak tier prompts appear and remember user choice
+- [x] All themed copy remains readable and conveys clear meaning
 
 ---
 

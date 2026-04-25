@@ -3,6 +3,18 @@ import { supabase } from '../lib/supabase';
 import type { User, Session } from '../lib/supabase';
 import type { AvatarConfig } from '../utils/avatarUtils';
 
+export const BALL_NAMES: Record<string, string> = {
+  'poke-ball': 'Poké Ball',
+  'great-ball': 'Great Ball',
+  'ultra-ball': 'Ultra Ball',
+  'master-ball': 'Master Ball',
+  'quick-ball': 'Quick Ball',
+  'timer-ball': 'Timer Ball',
+  'luxury-ball': 'Luxury Ball',
+  'net-ball': 'Net Ball',
+  'heal-ball': 'Heal Ball',
+};
+
 interface Profile {
   id: string;
   username: string;
@@ -10,10 +22,20 @@ interface Profile {
   display_ball: string;
 }
 
+interface Stats {
+  current_streak: number;
+  max_streak: number;
+  total_participations: number;
+  total_wins: number;
+  win_rate: number;
+  avg_guesses: number;
+}
+
 interface AuthState {
   user: User | null;
   session: Session | null;
   profile: Profile | null;
+  stats: Stats | null;
   isLoading: boolean;
   isGuest: boolean;
 }
@@ -28,12 +50,15 @@ interface AuthActions {
   resendVerification: () => Promise<{ error: string | null }>;
   signInWithGoogle: () => Promise<void>;
   updateAvatar: (config: Partial<AvatarConfig>) => Promise<{ error: string | null }>;
+  fetchMe: () => Promise<{ error: string | null }>;
+  updateDisplayBall: (ballId: string) => Promise<{ error: string | null }>;
 }
 
 const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   user: null,
   session: null,
   profile: null,
+  stats: null,
   isLoading: true,
   isGuest: true,
 
@@ -80,7 +105,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
           isGuest: false,
         });
       } else {
-        set({ user: null, session: null, profile: null, isGuest: true });
+        set({ user: null, session: null, profile: null, stats: null, isGuest: true });
       }
     });
   },
@@ -135,7 +160,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
 
   signOut: async () => {
     await supabase.auth.signOut();
-    set({ user: null, session: null, profile: null, isGuest: true });
+    set({ user: null, session: null, profile: null, stats: null, isGuest: true });
   },
 
   sendPasswordReset: async (email) => {
@@ -170,8 +195,58 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     // TODO Phase 8: call update-profile edge function
     return { error: null };
   },
+
+  fetchMe: async () => {
+    const { session } = get();
+    if (!session) return { error: null };
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    try {
+      const res = await fetch(`${supabaseUrl}/functions/v1/get-me`, {
+        headers: { 'Authorization': `Bearer ${session.access_token}` },
+      });
+      if (res.status === 401) return { error: 'Not signed in' };
+      if (res.status === 404) return { error: 'Profile not found' };
+      const data = await res.json();
+      set(state => ({
+        profile: state.profile && data.profile
+          ? { ...state.profile, ...data.profile }
+          : state.profile,
+        stats: data.stats ?? null,
+      }));
+      return { error: null };
+    } catch {
+      return { error: 'Failed to fetch profile' };
+    }
+  },
+
+  updateDisplayBall: async (ballId) => {
+    const { session } = get();
+    if (!session) return { error: 'Not signed in' };
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    try {
+      const res = await fetch(`${supabaseUrl}/functions/v1/set-display-ball`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ ball_id: ballId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        set(state => ({
+          profile: state.profile ? { ...state.profile, display_ball: ballId } : null,
+        }));
+      }
+      return { error: data.error ?? null };
+    } catch {
+      return { error: 'Failed to update display ball' };
+    }
+  },
 }));
 
 export { useAuthStore };
-export type { Profile };
+export type { Profile, Stats };
 export default useAuthStore;

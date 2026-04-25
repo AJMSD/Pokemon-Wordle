@@ -1,11 +1,21 @@
 import React from 'react'
+import { useAuthStore, BALL_NAMES } from '../store/authStore'
 
 interface HeaderProps {
   onShowCollection?: () => void
   onShowProfile?: () => void
 }
 
+const SPRITE_BASE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items'
+
 const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile }) => {
+  const profile = useAuthStore(state => state.profile)
+  const stats = useAuthStore(state => state.stats)
+  const isGuest = useAuthStore(state => state.isGuest)
+
+  const displayBall = (!isGuest && profile?.display_ball) ? profile.display_ball : 'poke-ball'
+  const ballName = BALL_NAMES[displayBall] ?? 'Poké Ball'
+
   return (
     <header className="mb-8 text-center relative">
       <h1 className="text-4xl md:text-5xl font-bold text-pokemon-red mb-2 tracking-wide">
@@ -21,9 +31,17 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile }) => {
       </p>
       {(onShowCollection || onShowProfile) && (
         <div className="absolute top-0 right-0 flex items-center gap-2">
-          <span className="text-xs bg-gray-100 text-gray-500 border border-gray-200 rounded-full px-2 py-0.5 font-medium">
-            Poké Ball
-          </span>
+          <div className="flex items-center gap-1 bg-gray-100 border border-gray-200 rounded-full px-2 py-0.5">
+            <img
+              src={`${SPRITE_BASE}/${displayBall}.png`}
+              alt={ballName}
+              className="w-4 h-4 object-contain"
+            />
+            <span className="text-xs font-medium text-gray-600">{ballName}</span>
+            {!isGuest && stats !== null && (
+              <span className="text-xs text-gray-400 ml-0.5">🔥 {stats.current_streak}</span>
+            )}
+          </div>
           {onShowCollection && (
             <button
               onClick={onShowCollection}
