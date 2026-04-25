@@ -115,26 +115,26 @@
 ## Phase 5: Profile and Avatar System
 
 ### Tasks
-- [ ] Implement username rules: unique, permanent, 3-20 chars, server-validated, profanity-filtered
-- [ ] Build username validation rejecting injection and malformed input
-- [ ] Create default profile image (Red silhouette aesthetic)
-- [ ] Implement Pokémon avatar selection from all available Pokémon
-- [ ] Add form/sprite filtering (only show if good support exists)
-- [ ] Implement shiny variant toggle when supported
-- [ ] Create avatar revert-to-default functionality
-- [ ] Build profile update endpoint (avatar_mode, avatar_pokemon_id, avatar_form_id, avatar_is_shiny)
-- [ ] Implement optimistic avatar update on frontend with rollback
-- [ ] Create GET /me endpoint returning user, profile, and current stats
-- [ ] Build profile avatar image URL generation/serving
+- [x] Implement username rules: unique, permanent, 3-20 chars, server-validated, profanity-filtered
+- [x] Build username validation rejecting injection and malformed input
+- [x] Create default profile image (Red silhouette aesthetic)
+- [x] Implement Pokémon avatar selection from all available Pokémon (stub: IDs 1-20; Phase 8 full)
+- [ ] Add form/sprite filtering (only show if good support exists) — deferred to Phase 8
+- [x] Implement shiny variant toggle when supported
+- [x] Create avatar revert-to-default functionality
+- [x] Build profile update endpoint (avatar_mode, avatar_pokemon_id, avatar_form_id, avatar_is_shiny)
+- [ ] Implement optimistic avatar update on frontend with rollback — deferred to Phase 8
+- [x] Create GET /me endpoint returning user, profile, and current stats
+- [x] Build profile avatar image URL generation/serving
 
 ### Acceptance Criteria
-- [ ] Usernames are unique and validated for injection
-- [ ] Usernames under 3 chars or over 20 chars are rejected with clear messaging
-- [ ] Profanity-filtered usernames are rejected with explanation
-- [ ] Users can select any Pokémon and shiny variant
-- [ ] Forms without good sprite support are hidden
-- [ ] Avatar updates work optimistically with rollback on failure
-- [ ] Default profile image is visually recognizable as Red silhouette
+- [x] Usernames are unique and validated for injection
+- [x] Usernames under 3 chars or over 20 chars are rejected with clear messaging
+- [x] Profanity-filtered usernames are rejected with explanation
+- [x] Users can select any Pokémon and shiny variant (stub picker in Phase 5; wired in Phase 8)
+- [ ] Forms without good sprite support are hidden — deferred to Phase 8
+- [ ] Avatar updates work optimistically with rollback on failure — deferred to Phase 8
+- [x] Default profile image is visually recognizable as Red silhouette
 
 ---
 

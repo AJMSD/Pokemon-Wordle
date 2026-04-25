@@ -2,9 +2,10 @@ import React from 'react'
 
 interface HeaderProps {
   onShowCollection?: () => void
+  onShowProfile?: () => void
 }
 
-const Header: React.FC<HeaderProps> = ({ onShowCollection }) => {
+const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile }) => {
   return (
     <header className="mb-8 text-center relative">
       <h1 className="text-4xl md:text-5xl font-bold text-pokemon-red mb-2 tracking-wide">
@@ -18,17 +19,27 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection }) => {
       <p className="text-gray-600 md:text-lg mb-1">
         Guess the Daily Pokémon from the Pokédex!
       </p>
-      {onShowCollection && (
+      {(onShowCollection || onShowProfile) && (
         <div className="absolute top-0 right-0 flex items-center gap-2">
           <span className="text-xs bg-gray-100 text-gray-500 border border-gray-200 rounded-full px-2 py-0.5 font-medium">
             Poké Ball
           </span>
-          <button
-            onClick={onShowCollection}
-            className="text-sm font-semibold text-pokemon-red hover:underline"
-          >
-            Collection
-          </button>
+          {onShowCollection && (
+            <button
+              onClick={onShowCollection}
+              className="text-sm font-semibold text-pokemon-red hover:underline"
+            >
+              Collection
+            </button>
+          )}
+          {onShowProfile && (
+            <button
+              onClick={onShowProfile}
+              className="text-sm font-semibold text-pokemon-red hover:underline"
+            >
+              Profile
+            </button>
+          )}
         </div>
       )}
     </header>

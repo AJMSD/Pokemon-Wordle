@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import type { User, Session } from '../lib/supabase';
+import type { AvatarConfig } from '../utils/avatarUtils';
 
 interface Profile {
   id: string;
   username: string;
-  avatar_config: Record<string, unknown>;
+  avatar_config: AvatarConfig;
   display_ball: string;
 }
 
@@ -26,6 +27,7 @@ interface AuthActions {
   confirmPasswordReset: (password: string) => Promise<{ error: string | null }>;
   resendVerification: () => Promise<{ error: string | null }>;
   signInWithGoogle: () => Promise<void>;
+  updateAvatar: (config: Partial<AvatarConfig>) => Promise<{ error: string | null }>;
 }
 
 const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
@@ -108,16 +110,19 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
 
     if (error) return { error: error.message };
 
-    // Create profile row
-    if (!error) {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase.from('profiles').upsert({
-          id: user.id,
-          username,
-          display_ball: 'poke-ball',
-        });
-      }
+    const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL) as string;
+    const { data: { session: newSession } } = await supabase.auth.getSession();
+    if (newSession) {
+      const res = await fetch(`${supabaseUrl}/functions/v1/create-profile`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${newSession.access_token}`,
+        },
+        body: JSON.stringify({ username }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { error: data.error ?? 'Failed to create profile' };
     }
 
     return { error: null };
@@ -159,6 +164,11 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         redirectTo: window.location.origin,
       },
     });
+  },
+
+  updateAvatar: async (_config) => {
+    // TODO Phase 8: call update-profile edge function
+    return { error: null };
   },
 }));
 
