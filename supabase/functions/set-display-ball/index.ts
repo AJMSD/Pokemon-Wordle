@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { checkRateLimit } from '../_shared/rateLimit.ts';
 
 function getStreakTierBall(streak: number): string {
   if (streak >= 14) return 'master-ball';
@@ -11,6 +12,8 @@ function getStreakTierBall(streak: number): string {
 Deno.serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
+
+  const start = Date.now();
 
   if (req.method !== 'PATCH') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
@@ -38,82 +41,103 @@ Deno.serve(async (req: Request) => {
     { global: { headers: { Authorization: authHeader } } }
   );
 
-  const { data: { user } } = await supabaseUser.auth.getUser();
-  if (!user) {
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-      status: 401,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-
-  const userId = user.id;
-
-  let body: { ball_id?: string };
   try {
-    body = await req.json();
-  } catch {
-    return new Response(JSON.stringify({ error: 'Invalid JSON' }), {
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
+    const { data: { user } } = await supabaseUser.auth.getUser();
+    if (!user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
-  const { ball_id } = body;
-  if (!ball_id) {
-    return new Response(JSON.stringify({ error: 'ball_id is required' }), {
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
+    const userId = user.id;
 
-  // Verify ball exists in catalog
-  const { data: ball } = await supabaseAdmin
-    .from('ball_catalog')
-    .select('id, category')
-    .eq('id', ball_id)
-    .single();
+    const rateLimit = await checkRateLimit(supabaseAdmin, `set-display-ball:user:${userId}`, 10, 60);
+    if (!rateLimit.allowed) {
+      return new Response(
+        JSON.stringify({ error: 'Rate limit exceeded', retry_after: rateLimit.retryAfter }),
+        {
+          status: 429,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': String(rateLimit.retryAfter) },
+        }
+      );
+    }
 
-  if (!ball) {
-    return new Response(JSON.stringify({ error: 'Ball not found' }), {
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
+    let body: { ball_id?: string };
+    try {
+      body = await req.json();
+    } catch {
+      return new Response(JSON.stringify({ error: 'Invalid JSON' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
-  // Check if user is allowed to use this ball
-  let allowed = false;
+    const { ball_id } = body;
+    if (!ball_id) {
+      return new Response(JSON.stringify({ error: 'ball_id is required' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
-  if (ball.category === 'standard') {
-    const { data: stats } = await supabaseAdmin
-      .from('user_stats')
-      .select('current_streak')
-      .eq('user_id', userId)
+    // Verify ball exists in catalog
+    const { data: ball } = await supabaseAdmin
+      .from('ball_catalog')
+      .select('id, category')
+      .eq('id', ball_id)
       .single();
-    const streak = stats?.current_streak ?? 0;
-    allowed = getStreakTierBall(streak) === ball_id;
-  } else {
-    const { data: unlock } = await supabaseAdmin
-      .from('ball_unlocks')
-      .select('ball_id')
-      .match({ user_id: userId, ball_id })
-      .single();
-    allowed = !!unlock;
-  }
 
-  if (!allowed) {
-    return new Response(JSON.stringify({ error: 'Ball not available' }), {
-      status: 400,
+    if (!ball) {
+      return new Response(JSON.stringify({ error: 'Ball not found' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Check if user is allowed to use this ball
+    let ballAllowed = false;
+
+    if (ball.category === 'standard') {
+      const { data: stats } = await supabaseAdmin
+        .from('user_stats')
+        .select('current_streak')
+        .eq('user_id', userId)
+        .single();
+      const streak = stats?.current_streak ?? 0;
+      ballAllowed = getStreakTierBall(streak) === ball_id;
+    } else {
+      const { data: unlock } = await supabaseAdmin
+        .from('ball_unlocks')
+        .select('ball_id')
+        .match({ user_id: userId, ball_id })
+        .single();
+      ballAllowed = !!unlock;
+    }
+
+    if (!ballAllowed) {
+      return new Response(JSON.stringify({ error: 'Ball not available' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    await supabaseAdmin
+      .from('profiles')
+      .update({ display_ball: ball_id })
+      .eq('user_id', userId);
+
+    console.log(JSON.stringify({ fn: 'set-display-ball', method: req.method, user_id: userId, status: 200, duration_ms: Date.now() - start }));
+
+    return new Response(
+      JSON.stringify({ display_ball: ball_id }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  } catch (err) {
+    console.error(JSON.stringify({ fn: 'set-display-ball', error: String(err), status: 500 }));
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
+      status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
-
-  await supabaseAdmin
-    .from('profiles')
-    .update({ display_ball: ball_id })
-    .eq('user_id', userId);
-
-  return new Response(
-    JSON.stringify({ display_ball: ball_id }),
-    { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-  );
 });

@@ -1,9 +1,12 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { checkRateLimit } from '../_shared/rateLimit.ts';
 
 Deno.serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
+
+  const start = Date.now();
 
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
@@ -39,6 +42,17 @@ Deno.serve(async (req: Request) => {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    const rateLimit = await checkRateLimit(supabaseAdmin, `migrate-guest:user:${user.id}`, 5, 3600);
+    if (!rateLimit.allowed) {
+      return new Response(
+        JSON.stringify({ error: 'Rate limit exceeded', retry_after: rateLimit.retryAfter }),
+        {
+          status: 429,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': String(rateLimit.retryAfter) },
+        }
+      );
     }
 
     const body = await req.json();
@@ -136,12 +150,14 @@ Deno.serve(async (req: Request) => {
       responseBody.pokemon_name = puzzle!.pokemon_name;
     }
 
+    console.log(JSON.stringify({ fn: 'migrate-guest', method: req.method, user_id: user.id, status: 200, duration_ms: Date.now() - start }));
+
     return new Response(JSON.stringify(responseBody), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {
-    console.error('migrate-guest error:', err);
+    console.error(JSON.stringify({ fn: 'migrate-guest', error: String(err), status: 500 }));
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -10,6 +10,17 @@ import {
   normalizePokemonName
 } from '../utils/pokemonUtils';
 
+function mapServerHints(
+  flags: { ability: boolean; generation: boolean; type: boolean },
+  hints: { ability?: string; generation?: string; types?: string[] }
+) {
+  return [
+    { type: 'ability' as const,    value: hints.ability ?? '',    revealed: flags.ability },
+    { type: 'generation' as const, value: hints.generation ?? '', revealed: flags.generation },
+    { type: 'type' as const,       value: hints.types ?? [],      revealed: flags.type },
+  ];
+}
+
 const useGameStore = create<GameState & GameActions>((set, get) => ({
   dailyPokemon: null,
   pokemonList: [],
@@ -23,15 +34,22 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
   isLoading: false,
   error: null,
   lastPlayedDate: null,
+  sessionVersion: null,
+  puzzleDateKey: null,
+  isSubmitting: false,
+  staleLock: false,
+  rateLimitUntil: null,
+  newlyUnlockedBalls: [],
+  rejectedGuess: null,
 
   // Loads or initializes the game state using localStorage when possible
   initializeGame: async () => {
     set({ isLoading: true, error: null });
-    
+
     try {
       const today = new Date().toISOString().slice(0, 10);
       const lastPlayed = localStorage.getItem('lastPlayedDate');
-      
+
       // Restore previous game state if it's from the same day
       if (lastPlayed === today && localStorage.getItem('gameState')) {
         try {
@@ -42,14 +60,43 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
           console.error('Failed to parse saved game state', e);
         }
       }
-      
-      // Initialize a new game if no saved state or from a different day
-      const pokemonList = await fetchAllPokemon();
+
+      // Evict stale date-keyed API cache entries from previous days
+      const staleKeys: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('pokemon_list_cache_') || key.startsWith('pokemon_detail_cache_')) && !key.endsWith(today)) {
+          staleKeys.push(key);
+        }
+      }
+      staleKeys.forEach(k => localStorage.removeItem(k));
+
+      // Pokemon list — served from cache when available
+      const listCacheKey = `pokemon_list_cache_${today}`;
+      let pokemonList: string[];
+      const cachedList = localStorage.getItem(listCacheKey);
+      if (cachedList) {
+        pokemonList = JSON.parse(cachedList);
+      } else {
+        pokemonList = await fetchAllPokemon();
+        try { localStorage.setItem(listCacheKey, JSON.stringify(pokemonList)); } catch {}
+      }
+
       const dailyIndex = getDailyPokemonIndex();
       const dailyPokemonName = pokemonList[dailyIndex % pokemonList.length];
-      const dailyPokemon = await fetchPokemonDetails(dailyPokemonName);
-      
-      const newState: Partial<GameState> = { 
+
+      // Daily pokemon details — served from cache when available
+      const detailCacheKey = `pokemon_detail_cache_${dailyPokemonName}_${today}`;
+      let dailyPokemon;
+      const cachedDetail = localStorage.getItem(detailCacheKey);
+      if (cachedDetail) {
+        dailyPokemon = JSON.parse(cachedDetail);
+      } else {
+        dailyPokemon = await fetchPokemonDetails(dailyPokemonName);
+        try { localStorage.setItem(detailCacheKey, JSON.stringify(dailyPokemon)); } catch {}
+      }
+
+      const newState: Partial<GameState> = {
         dailyPokemon,
         pokemonList,
         guesses: [],
@@ -62,9 +109,9 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
         isLoading: false,
         lastPlayedDate: today
       };
-      
+
       set(newState);
-      
+
       // Save state to localStorage
       localStorage.setItem('lastPlayedDate', today);
       localStorage.setItem('gameState', JSON.stringify({
@@ -76,9 +123,9 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
         lastPlayedDate: today
       }));
     } catch (error) {
-      set({ 
-        error: 'Failed to initialize game. Please try again.',
-        isLoading: false 
+      set({
+        error: 'Failed to sync your Pokédex. Please try again.',
+        isLoading: false
       });
     }
   },
@@ -95,13 +142,13 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
     
     // Validate guess hasn't been made before
     if (guesses.includes(normalizedGuess)) {
-      set({ error: 'You already guessed this Pokémon!' });
+      set({ error: 'You already threw a ball at that one!' });
       return false;
     }
     
     // Validate guess is a real Pokémon name
     if (!isValidPokemonName(normalizedGuess, pokemonList)) {
-      set({ error: 'Not a valid Pokémon name!' });
+      set({ error: "That Pokémon isn't in your Pokédex!" });
       return false;
     }
     
@@ -176,7 +223,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       }));
     } catch (error) {
       set({ 
-        error: 'Failed to reveal hint. Please try again.',
+        error: "Couldn't scan for clues. Try again.",
         isLoading: false 
       });
     }
@@ -229,7 +276,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       });
     } catch (error) {
       set({ 
-        error: 'Failed to select a new Pokémon. Please try again.',
+        error: "Couldn't load today's Pokémon. Try again.",
         isLoading: false 
       });
     }
@@ -244,11 +291,136 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
   checkForNewDay: () => {
     const { lastPlayedDate } = get();
     const today = new Date().toISOString().slice(0, 10);
-    
+
     if (lastPlayedDate !== today) {
       get().initializeGame();
     }
-  }
+  },
+
+  initializeServerSession: async (accessToken) => {
+    const base = import.meta.env.VITE_SUPABASE_URL as string;
+    try {
+      const puzzleRes = await fetch(`${base}/functions/v1/get-daily-puzzle`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!puzzleRes.ok) return;
+      const { puzzle_date_key } = await puzzleRes.json();
+
+      const sessRes = await fetch(
+        `${base}/functions/v1/get-session?puzzle_date_key=${puzzle_date_key}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      if (!sessRes.ok) return;
+      const s = await sessRes.json();
+
+      const newStatus: GameState['gameStatus'] =
+        s.completion_state === 'won' ? 'won' :
+        s.completion_state === 'lost' ? 'lost' : 'playing';
+
+      set(state => ({
+        guesses: s.guesses ?? state.guesses,
+        hints: s.hint_flags ? mapServerHints(s.hint_flags, s.hints ?? {}) : state.hints,
+        gameStatus: newStatus,
+        sessionVersion: s.version,
+        puzzleDateKey: puzzle_date_key,
+        dailyPokemon: state.dailyPokemon && s.pokemon_name
+          ? { ...state.dailyPokemon, name: s.pokemon_name }
+          : state.dailyPokemon,
+      }));
+
+      localStorage.setItem('gameState', JSON.stringify({
+        ...get(), isLoading: false, isSubmitting: false, error: null,
+      }));
+    } catch (err) {
+      console.error('Server session sync failed:', err);
+    }
+  },
+
+  submitGuessToServer: async (guess, accessToken) => {
+    const { dailyPokemon, guesses, pokemonList, gameStatus, sessionVersion, puzzleDateKey } = get();
+    const base = import.meta.env.VITE_SUPABASE_URL as string;
+
+    if (!dailyPokemon || gameStatus !== 'playing' || !puzzleDateKey) return false;
+
+    const normalized = normalizePokemonName(guess);
+
+    if (guesses.includes(normalized)) {
+      set({ error: 'You already threw a ball at that one!' });
+      return false;
+    }
+    if (!isValidPokemonName(normalized, pokemonList)) {
+      set({ error: "That Pokémon isn't in your Pokédex!" });
+      return false;
+    }
+
+    const originalGuesses = [...guesses];
+    set({ guesses: [...guesses, normalized], isSubmitting: true, error: null });
+
+    try {
+      const resp = await fetch(`${base}/functions/v1/submit-guess`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({
+          guess: normalized,
+          session_version: sessionVersion ?? 1,
+          puzzle_date_key: puzzleDateKey,
+        }),
+      });
+
+      if (resp.ok) {
+        const d = await resp.json();
+        const newStatus: GameState['gameStatus'] =
+          d.completion_state === 'won' ? 'won' :
+          d.completion_state === 'lost' ? 'lost' : 'playing';
+
+        set({
+          guesses: d.guesses,
+          hints: d.hint_flags ? mapServerHints(d.hint_flags, d.hints ?? {}) : get().hints,
+          gameStatus: newStatus,
+          sessionVersion: d.version,
+          isSubmitting: false,
+          newlyUnlockedBalls: d.newly_unlocked_balls ?? [],
+          dailyPokemon: get().dailyPokemon && d.pokemon_name
+            ? { ...get().dailyPokemon!, name: d.pokemon_name }
+            : get().dailyPokemon,
+        });
+
+        localStorage.setItem('lastPlayedDate', new Date().toISOString().slice(0, 10));
+        localStorage.setItem('gameState', JSON.stringify({
+          ...get(), isLoading: false, isSubmitting: false, error: null,
+        }));
+        return newStatus === 'won';
+      }
+
+      const errData = await resp.json().catch(() => ({}));
+      if (resp.status === 409) {
+        set({ guesses: originalGuesses, isSubmitting: false, staleLock: true, rejectedGuess: normalized });
+      } else if (resp.status === 429) {
+        set({
+          guesses: originalGuesses,
+          isSubmitting: false,
+          rateLimitUntil: Date.now() + (errData.retry_after ?? 60) * 1000,
+          rejectedGuess: normalized,
+        });
+      } else {
+        set({
+          guesses: originalGuesses,
+          isSubmitting: false,
+          error: errData.error ?? "Couldn't register that guess. Try again.",
+          rejectedGuess: normalized,
+        });
+      }
+      return false;
+    } catch {
+      set({ guesses: originalGuesses, isSubmitting: false, error: 'Connection lost. Check your signal, Trainer!', rejectedGuess: normalized });
+      return false;
+    }
+  },
+
+  clearRateLimitLock:      () => set({ rateLimitUntil: null }),
+  clearStaleLock:          () => set({ staleLock: false }),
+  clearNewlyUnlockedBalls: () => set({ newlyUnlockedBalls: [] }),
+  clearRejectedGuess:      () => set({ rejectedGuess: null }),
 }));
 
 export { useGameStore };

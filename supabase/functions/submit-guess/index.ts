@@ -1,6 +1,9 @@
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { checkRateLimit } from '../_shared/rateLimit.ts';
+import { checkBallUnlocks } from '../../../src/logic/ballLogic.ts';
+import { calcWinStreak, calcParticipationStreak, calcWinsAfterLoss } from '../../../src/logic/streakLogic.ts';
+import { isStaleSession } from '../../../src/logic/staleDeviceCheck.ts';
 
 async function awardBall(
   supabaseAdmin: SupabaseClient,
@@ -62,6 +65,8 @@ Deno.serve(async (req: Request) => {
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
+
+  const start = Date.now();
 
   try {
     const body = await req.json();
@@ -157,7 +162,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Optimistic concurrency check
-    if (session_version !== undefined && session.version !== session_version) {
+    if (isStaleSession(session_version, session.version)) {
       return new Response(
         JSON.stringify({ error: 'stale_session', current_version: session.version }),
         {
@@ -190,10 +195,11 @@ Deno.serve(async (req: Request) => {
 
       if (stats && stats.last_participation_date !== puzzle_date_key) {
         const yesterdayJST = getYesterdayJST();
-        const partStreak =
-          stats.last_participation_date === yesterdayJST
-            ? (stats.participation_streak ?? 0) + 1
-            : 1;
+        const partStreak = calcParticipationStreak(
+          stats.last_participation_date ?? '',
+          yesterdayJST,
+          stats.participation_streak ?? 0
+        );
 
         // Net Ball: track Water/Bug-type days
         const types: string[] = (puzzle.pokemon_data as { types?: string[] }).types ?? [];
@@ -208,20 +214,21 @@ Deno.serve(async (req: Request) => {
           ...(isWaterOrBug ? { water_bug_daily_wins: newWaterBugCount } : {}),
         }).eq('user_id', userId);
 
-        if (isWaterOrBug && newWaterBugCount >= 10) {
-          if (await awardBall(supabaseAdmin, userId, 'net-ball')) newlyUnlocked.push('net-ball');
-        }
+        const { data: profile } = partStreak >= 7
+          ? await supabaseAdmin.from('profiles').select('user_id').eq('user_id', userId).single()
+          : { data: null };
 
-        // Luxury Ball: verified + profile exists + participation_streak >= 7
-        if (partStreak >= 7) {
-          const { data: profile } = await supabaseAdmin
-            .from('profiles')
-            .select('user_id')
-            .eq('user_id', userId)
-            .single();
-          if (profile) {
-            if (await awardBall(supabaseAdmin, userId, 'luxury-ball')) newlyUnlocked.push('luxury-ball');
-          }
+        const participationBalls = checkBallUnlocks({
+          completionState: 'playing',
+          guessCount: 0,
+          partStreak,
+          waterBugCount: newWaterBugCount,
+          isWaterOrBug,
+          winsAfterLoss: 0,
+          hasProfile: !!profile,
+        });
+        for (const ball of participationBalls) {
+          if (await awardBall(supabaseAdmin, userId, ball)) newlyUnlocked.push(ball);
         }
       }
     }
@@ -298,18 +305,18 @@ Deno.serve(async (req: Request) => {
         }
 
         const yesterdayJST = getYesterdayJST();
-        const currentStreak =
+        const currentStreak = calcWinStreak(
+          stats.last_played_date ?? '',
+          yesterdayJST,
+          stats.current_streak ?? 0,
           completionState === 'won'
-            ? stats.last_played_date === yesterdayJST
-              ? (stats.current_streak ?? 0) + 1
-              : 1
-            : 0;
+        );
         const maxStreak = Math.max(stats.max_streak ?? 0, currentStreak);
 
-        // Heal Ball: track consecutive wins after a loss
-        const newWinsAfterLoss = completionState === 'won'
-          ? (stats.wins_after_loss_streak ?? 0) + 1
-          : 0;
+        const newWinsAfterLoss = calcWinsAfterLoss(
+          stats.wins_after_loss_streak ?? 0,
+          completionState === 'won'
+        );
 
         await supabaseAdmin.from('user_stats').update({
           games_won: gamesWon,
@@ -321,19 +328,17 @@ Deno.serve(async (req: Request) => {
           wins_after_loss_streak: newWinsAfterLoss,
         }).eq('user_id', userId);
 
-        // Quick Ball: won in 1 or 2 guesses
-        if (completionState === 'won' && newGuesses.length <= 2) {
-          if (await awardBall(supabaseAdmin, userId, 'quick-ball')) newlyUnlocked.push('quick-ball');
-        }
-
-        // Timer Ball: won on exactly the 10th guess
-        if (completionState === 'won' && newGuesses.length === 10) {
-          if (await awardBall(supabaseAdmin, userId, 'timer-ball')) newlyUnlocked.push('timer-ball');
-        }
-
-        // Heal Ball: 3 consecutive wins after a loss
-        if (newWinsAfterLoss >= 3) {
-          if (await awardBall(supabaseAdmin, userId, 'heal-ball')) newlyUnlocked.push('heal-ball');
+        const completionBalls = checkBallUnlocks({
+          completionState,
+          guessCount: newGuesses.length,
+          partStreak: 0,
+          waterBugCount: 0,
+          isWaterOrBug: false,
+          winsAfterLoss: newWinsAfterLoss,
+          hasProfile: false,
+        });
+        for (const ball of completionBalls) {
+          if (await awardBall(supabaseAdmin, userId, ball)) newlyUnlocked.push(ball);
         }
       }
     }
@@ -359,12 +364,14 @@ Deno.serve(async (req: Request) => {
 
     responseBody.newly_unlocked_balls = newlyUnlocked;
 
+    console.log(JSON.stringify({ fn: 'submit-guess', method: req.method, user_id: userId, status: 200, duration_ms: Date.now() - start }));
+
     return new Response(JSON.stringify(responseBody), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {
-    console.error('submit-guess error:', err);
+    console.error(JSON.stringify({ fn: 'submit-guess', error: String(err), status: 500 }));
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

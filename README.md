@@ -24,6 +24,24 @@ npm run dev
 npm run build
 ```
 
+## Testing
+
+```bash
+# Unit tests (Vitest)
+npm test
+
+# Unit tests in watch mode
+npm run test:watch
+
+# E2E tests (Playwright)
+# Requires the dev server to be running first
+npm run dev          # terminal 1
+npm run test:e2e     # terminal 2
+
+# Run E2E against a custom URL (e.g. staging)
+PLAYWRIGHT_BASE_URL=https://your-url.com npm run test:e2e
+```
+
 ## Tech Stack
 
 - React + Vite

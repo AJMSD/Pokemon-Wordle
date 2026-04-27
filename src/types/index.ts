@@ -49,6 +49,13 @@ export interface GameState {
   isLoading: boolean;
   error: string | null;
   lastPlayedDate: string | null;
+  sessionVersion: number | null;
+  puzzleDateKey: string | null;
+  isSubmitting: boolean;
+  staleLock: boolean;
+  rateLimitUntil: number | null;
+  newlyUnlockedBalls: string[];
+  rejectedGuess: string | null;
 }
 
 export interface GameActions {
@@ -59,4 +66,10 @@ export interface GameActions {
   resetError: () => void;
   selectNewPokemon: () => Promise<void>;
   checkForNewDay: () => void;
+  initializeServerSession: (accessToken: string) => Promise<void>;
+  submitGuessToServer: (guess: string, accessToken: string) => Promise<boolean>;
+  clearRateLimitLock: () => void;
+  clearStaleLock: () => void;
+  clearNewlyUnlockedBalls: () => void;
+  clearRejectedGuess: () => void;
 }

@@ -14,6 +14,8 @@ Deno.serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
 
+  const start = Date.now();
+
   if (req.method !== 'GET') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
       status: 405,
@@ -40,74 +42,84 @@ Deno.serve(async (req: Request) => {
     { global: { headers: { Authorization: authHeader } } }
   );
 
-  const { data: { user } } = await supabaseUser.auth.getUser();
-  if (!user || !user.email_confirmed_at) {
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-      status: 401,
+  try {
+    const { data: { user } } = await supabaseUser.auth.getUser();
+    if (!user || !user.email_confirmed_at) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const userId = user.id;
+
+    const [catalogResult, unlocksResult, statsResult, profileResult] = await Promise.all([
+      supabaseAdmin.from('ball_catalog').select('id, display_name, description, category, unlock_condition'),
+      supabaseAdmin.from('ball_unlocks').select('ball_id').eq('user_id', userId),
+      supabaseAdmin.from('user_stats').select('current_streak').eq('user_id', userId).single(),
+      supabaseAdmin.from('profiles').select('display_ball').eq('user_id', userId).single(),
+    ]);
+
+    const catalog = catalogResult.data ?? [];
+    const unlocked = new Set((unlocksResult.data ?? []).map((r: { ball_id: string }) => r.ball_id));
+    const streak = statsResult.data?.current_streak ?? 0;
+    const displayBall = profileResult.data?.display_ball ?? 'poke-ball';
+
+    const currentTierBall = getStreakTierBall(streak);
+    const currentTierIndex = STANDARD_ORDER.indexOf(currentTierBall);
+
+    const balls = catalog.map((b: {
+      id: string;
+      display_name: string;
+      category: string;
+      unlock_condition: { hint?: string } | null;
+    }) => {
+      const hint = b.unlock_condition?.hint ?? null;
+      let status: string;
+
+      if (b.category === 'standard') {
+        const ballIndex = STANDARD_ORDER.indexOf(b.id);
+        if (ballIndex < currentTierIndex) status = 'past_tier';
+        else if (ballIndex === currentTierIndex) status = 'current_tier';
+        else status = 'future_tier';
+      } else {
+        status = unlocked.has(b.id) ? 'unlocked' : 'locked';
+      }
+
+      return {
+        id: b.id,
+        display_name: b.display_name,
+        category: b.category,
+        status,
+        hint,
+      };
+    });
+
+    // Sort: standard balls first (by tier order), then achievement balls
+    balls.sort((a: { category: string; id: string }, b: { category: string; id: string }) => {
+      if (a.category === 'standard' && b.category !== 'standard') return -1;
+      if (a.category !== 'standard' && b.category === 'standard') return 1;
+      if (a.category === 'standard') {
+        return STANDARD_ORDER.indexOf(a.id) - STANDARD_ORDER.indexOf(b.id);
+      }
+      return 0;
+    });
+
+    console.log(JSON.stringify({ fn: 'get-balls', method: req.method, user_id: userId, status: 200, duration_ms: Date.now() - start }));
+
+    return new Response(
+      JSON.stringify({
+        current_streak_tier: currentTierBall,
+        display_ball: displayBall,
+        balls,
+      }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  } catch (err) {
+    console.error(JSON.stringify({ fn: 'get-balls', error: String(err), status: 500 }));
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
+      status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
-
-  const userId = user.id;
-
-  const [catalogResult, unlocksResult, statsResult, profileResult] = await Promise.all([
-    supabaseAdmin.from('ball_catalog').select('id, display_name, description, category, unlock_condition'),
-    supabaseAdmin.from('ball_unlocks').select('ball_id').eq('user_id', userId),
-    supabaseAdmin.from('user_stats').select('current_streak').eq('user_id', userId).single(),
-    supabaseAdmin.from('profiles').select('display_ball').eq('user_id', userId).single(),
-  ]);
-
-  const catalog = catalogResult.data ?? [];
-  const unlocked = new Set((unlocksResult.data ?? []).map((r: { ball_id: string }) => r.ball_id));
-  const streak = statsResult.data?.current_streak ?? 0;
-  const displayBall = profileResult.data?.display_ball ?? 'poke-ball';
-
-  const currentTierBall = getStreakTierBall(streak);
-  const currentTierIndex = STANDARD_ORDER.indexOf(currentTierBall);
-
-  const balls = catalog.map((b: {
-    id: string;
-    display_name: string;
-    category: string;
-    unlock_condition: { hint?: string } | null;
-  }) => {
-    const hint = b.unlock_condition?.hint ?? null;
-    let status: string;
-
-    if (b.category === 'standard') {
-      const ballIndex = STANDARD_ORDER.indexOf(b.id);
-      if (ballIndex < currentTierIndex) status = 'past_tier';
-      else if (ballIndex === currentTierIndex) status = 'current_tier';
-      else status = 'future_tier';
-    } else {
-      status = unlocked.has(b.id) ? 'unlocked' : 'locked';
-    }
-
-    return {
-      id: b.id,
-      display_name: b.display_name,
-      category: b.category,
-      status,
-      hint,
-    };
-  });
-
-  // Sort: standard balls first (by tier order), then achievement balls
-  balls.sort((a: { category: string; id: string }, b: { category: string; id: string }) => {
-    if (a.category === 'standard' && b.category !== 'standard') return -1;
-    if (a.category !== 'standard' && b.category === 'standard') return 1;
-    if (a.category === 'standard') {
-      return STANDARD_ORDER.indexOf(a.id) - STANDARD_ORDER.indexOf(b.id);
-    }
-    return 0;
-  });
-
-  return new Response(
-    JSON.stringify({
-      current_streak_tier: currentTierBall,
-      display_ball: displayBall,
-      balls,
-    }),
-    { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-  );
 });

@@ -18,13 +18,21 @@ const BallUnlockModal: React.FC<BallUnlockModalProps> = ({ ballName, ballId, vis
         className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full mx-4 text-center"
         style={{ animation: 'fadeInScale 0.3s ease-out' }}
       >
-        <img
-          src={`${SPRITE_BASE}/${ballId}.png`}
-          alt={ballName}
-          className="w-16 h-16 mx-auto mb-4 object-contain"
-        />
+        <div className="ball-burst-animate inline-block">
+          <div className="unlock-ring-animate inline-block">
+            <img
+              src={`${SPRITE_BASE}/${ballId}.png`}
+              alt={ballName}
+              className="w-16 h-16 object-contain"
+              loading="lazy"
+              decoding="async"
+              width={64}
+              height={64}
+            />
+          </div>
+        </div>
         <h2 className="text-2xl font-bold text-pokemon-red mb-2">New Ball Unlocked!</h2>
-        <p className="text-gray-500 text-sm mb-2">A new ball has been added to your collection!</p>
+        <p className="text-gray-500 text-sm mb-2">A new ball has been added to your case!</p>
         <p className="text-gray-800 text-lg font-semibold mb-6">{ballName}</p>
         <button
           onClick={onClose}

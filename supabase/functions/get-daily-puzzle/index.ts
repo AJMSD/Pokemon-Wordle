@@ -62,6 +62,8 @@ Deno.serve(async (req: Request) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
 
+  const start = Date.now();
+
   try {
     const puzzleDateKey = getJSTDateKey();
 
@@ -99,6 +101,8 @@ Deno.serve(async (req: Request) => {
     }
 
     // Never return the answer — only metadata needed to play
+    console.log(JSON.stringify({ fn: 'get-daily-puzzle', method: req.method, user_id: null, status: 200, duration_ms: Date.now() - start }));
+
     return new Response(
       JSON.stringify({
         puzzle_date_key: puzzleDateKey,
@@ -115,7 +119,7 @@ Deno.serve(async (req: Request) => {
       }
     );
   } catch (err) {
-    console.error('get-daily-puzzle error:', err);
+    console.error(JSON.stringify({ fn: 'get-daily-puzzle', error: String(err), status: 500 }));
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

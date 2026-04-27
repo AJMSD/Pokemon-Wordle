@@ -11,7 +11,9 @@ Deno.serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
 
-  if (req.method !== 'GET') {
+  const start = Date.now();
+
+  if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
       status: 405,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -23,12 +25,9 @@ Deno.serve(async (req: Request) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
 
-  const start = Date.now();
-
   try {
-    const url = new URL(req.url);
-    const puzzle_date_key = url.searchParams.get('puzzle_date_key');
-    const guest_id = url.searchParams.get('guest_id');
+    const body = await req.json();
+    const { puzzle_date_key, guest_id } = body;
 
     if (!puzzle_date_key) {
       return new Response(JSON.stringify({ error: 'Missing puzzle_date_key' }), {
@@ -37,11 +36,11 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Resolve identity
+    // Resolve identity (auth optional)
     let userId: string | null = null;
+    let isVerified = false;
     const authHeader = req.headers.get('Authorization');
 
-    let isVerified = false;
     if (authHeader) {
       const supabaseUser = createClient(
         Deno.env.get('SUPABASE_URL')!,
@@ -63,21 +62,21 @@ Deno.serve(async (req: Request) => {
 
     // Rate limit: 30 req/min
     const rateLimitKey = userId
-      ? `get-session:user:${userId}`
-      : `get-session:ip:${getClientIP(req)}`;
+      ? `refresh-state:user:${userId}`
+      : `refresh-state:ip:${getClientIP(req)}`;
 
-    const { allowed, retryAfter } = await checkRateLimit(supabaseAdmin, rateLimitKey, 30, 60);
-    if (!allowed) {
+    const rateLimit = await checkRateLimit(supabaseAdmin, rateLimitKey, 30, 60);
+    if (!rateLimit.allowed) {
       return new Response(
-        JSON.stringify({ error: 'Rate limit exceeded', retry_after: retryAfter }),
+        JSON.stringify({ error: 'Rate limit exceeded', retry_after: rateLimit.retryAfter }),
         {
           status: 429,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': String(retryAfter) },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': String(rateLimit.retryAfter) },
         }
       );
     }
 
-    // Mark any stale sessions as missed
+    // Mark stale sessions as missed (same as get-session)
     await markMissedSessions(supabaseAdmin, userId, isGuest ? guest_id : null, puzzle_date_key, isVerified);
 
     // Load puzzle
@@ -94,30 +93,20 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Load or create session
+    // Load existing session only — refresh-state does not create sessions
     const sessionFilter = isGuest ? { guest_id } : { user_id: userId };
 
-    let { data: session } = await supabaseAdmin
+    const { data: session } = await supabaseAdmin
       .from('daily_sessions')
       .select('*')
       .match({ ...sessionFilter, puzzle_date_key })
       .single();
 
     if (!session) {
-      const { data: newSession } = await supabaseAdmin
-        .from('daily_sessions')
-        .insert({
-          ...sessionFilter,
-          puzzle_date_key,
-          puzzle_id: puzzle.id,
-          guesses: [],
-          hint_flags: { ability: false, generation: false, type: false },
-          completion_state: 'playing',
-          version: 1,
-        })
-        .select()
-        .single();
-      session = newSession;
+      return new Response(JSON.stringify({ error: 'Session not found' }), {
+        status: 404,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     // Build revealed hints
@@ -141,14 +130,14 @@ Deno.serve(async (req: Request) => {
       responseBody.pokemon_name = puzzle.pokemon_name;
     }
 
-    console.log(JSON.stringify({ fn: 'get-session', method: req.method, user_id: userId, status: 200, duration_ms: Date.now() - start }));
+    console.log(JSON.stringify({ fn: 'refresh-state', method: req.method, user_id: userId, status: 200, duration_ms: Date.now() - start }));
 
     return new Response(JSON.stringify(responseBody), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {
-    console.error(JSON.stringify({ fn: 'get-session', error: String(err), status: 500 }));
+    console.error(JSON.stringify({ fn: 'refresh-state', error: String(err), status: 500 }));
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -102,7 +102,23 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
       )}
 
       {loading ? (
-        <div className="text-center py-10 text-gray-400">Loading…</div>
+        <div className="animate-pulse space-y-6">
+          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="flex flex-col items-center gap-1">
+                  <div className="w-14 h-14 rounded-full bg-gray-200" />
+                  <div className="w-10 h-3 bg-gray-200 rounded" />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="h-32 bg-gray-100 rounded-xl" />
+            ))}
+          </div>
+        </div>
       ) : (
         <>
           {/* Standard tier track */}
@@ -135,7 +151,7 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
                           {isFuture ? (
                             <span className="text-gray-400 text-lg">?</span>
                           ) : (
-                            <img src={`${SPRITE_BASE}/${ball.id}.png`} alt={ball.display_name} className="w-8 h-8 object-contain" />
+                            <img src={`${SPRITE_BASE}/${ball.id}.png`} alt={ball.display_name} className="w-8 h-8 object-contain" loading="lazy" decoding="async" width={32} height={32} />
                           )}
                         </button>
                         <span className={`text-xs text-center leading-tight max-w-[56px] ${isFuture ? 'text-gray-400' : 'text-gray-700'}`}>
@@ -187,7 +203,7 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
                     } ${isSelected ? 'border-pokemon-blue ring-1 ring-pokemon-blue' : ''}`}
                   >
                     {isUnlocked ? (
-                      <img src={`${SPRITE_BASE}/${ball.id}.png`} alt={ball.display_name} className="w-12 h-12 object-contain" />
+                      <img src={`${SPRITE_BASE}/${ball.id}.png`} alt={ball.display_name} className="w-12 h-12 object-contain" loading="lazy" decoding="async" width={48} height={48} />
                     ) : (
                       <div className="w-12 h-12 rounded-full bg-gray-300 border-2 border-gray-400 flex items-center justify-center">
                         <span className="text-gray-500 text-lg">?</span>

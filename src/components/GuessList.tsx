@@ -3,7 +3,7 @@ import { useGameStore } from '../store/gameStore'
 import { getLetterMatchResult, normalizePokemonName } from '../utils/pokemonUtils'
 
 const GuessList: React.FC = () => {
-  const { guesses, dailyPokemon } = useGameStore()
+  const { guesses, dailyPokemon, isSubmitting } = useGameStore()
   const guessesEndRef = useRef<HTMLDivElement>(null)
   
   // Auto-scroll to the latest guess
@@ -17,7 +17,7 @@ const GuessList: React.FC = () => {
   if (guesses.length === 0) {
     return (
       <div className="empty-guesses">
-        <p>Start guessing to see your attempts here!</p>
+        <p>Throw your first Poké Ball to begin!</p>
       </div>
     )
   }
@@ -33,9 +33,9 @@ const GuessList: React.FC = () => {
           const letterResults = getLetterMatchResult(normalizedGuess, normalizedTarget);
           
           return (
-            <li 
+            <li
               key={index}
-              className={`guess-item ${isCorrect ? 'correct-guess' : ''}`}
+              className={`guess-item ${isCorrect ? 'correct-guess' : ''} ${isSubmitting && index === guesses.length - 1 ? 'guess-pending' : ''}`}
             >
               <div className="guess-info">
                 <span className="guess-name">{guess}</span>

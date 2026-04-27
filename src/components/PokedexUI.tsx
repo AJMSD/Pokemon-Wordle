@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useGameStore } from '../store/gameStore'
+import { useAuthStore } from '../store/authStore'
 import HintPanel from './HintPanel'
 import GuessList from './GuessList'
 import useToast from '../hooks/useToast'
@@ -7,13 +8,22 @@ import useGame from '../hooks/useGame'
 
 const PokedexUI: React.FC = () => {
   const [currentGuess, setCurrentGuess] = useState('')
-  const { makeGuess, error, resetError, dailyPokemon, gameStatus, checkForNewDay } = useGameStore()
+  const {
+    makeGuess, submitGuessToServer, error, resetError,
+    dailyPokemon, gameStatus, checkForNewDay,
+    isSubmitting, staleLock, rateLimitUntil, rejectedGuess,
+    clearStaleLock, clearRejectedGuess,
+  } = useGameStore()
+  const session = useAuthStore(state => state.session)
+  const isGuest = useAuthStore(state => state.isGuest)
   const { getSuggestions } = useGame()
   const { showError, addToast } = useToast()
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(-1)
   const [justSelected, setJustSelected] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
+  const [rateLimitSeconds, setRateLimitSeconds] = useState<number | null>(null)
+  const [inputShaking, setInputShaking] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
   const suggestionsRef = useRef<HTMLDivElement>(null)
@@ -38,6 +48,27 @@ const PokedexUI: React.FC = () => {
     checkForNewDay();
   }, [checkForNewDay]);
 
+  // Rate-limit countdown
+  useEffect(() => {
+    if (!rateLimitUntil) { setRateLimitSeconds(null); return; }
+    const tick = () => {
+      const r = Math.ceil((rateLimitUntil - Date.now()) / 1000);
+      if (r <= 0) { setRateLimitSeconds(null); return; }
+      setRateLimitSeconds(r);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [rateLimitUntil]);
+
+  // Shake on rejection
+  useEffect(() => {
+    if (!rejectedGuess) return;
+    setInputShaking(true);
+    const t = setTimeout(() => { setInputShaking(false); clearRejectedGuess(); }, 500);
+    return () => clearTimeout(t);
+  }, [rejectedGuess, clearRejectedGuess]);
+
   // Display error toasts and game status notifications
   useEffect(() => {
     if (error) {
@@ -46,9 +77,9 @@ const PokedexUI: React.FC = () => {
     }
     
     if (gameStatus === 'won') {
-      addToast('Congratulations! You guessed correctly!', 'success')
+      addToast("You caught it! Today's win is logged.", 'success')
     } else if (gameStatus === 'lost') {
-      addToast(`Game over! The Pokémon was ${dailyPokemon?.name}.`, 'error')
+      addToast(`Game over! Today's Pokémon was ${dailyPokemon?.name}.`, 'error')
     }
   }, [error, resetError, showError, gameStatus, addToast, dailyPokemon?.name])
 
@@ -86,15 +117,20 @@ const PokedexUI: React.FC = () => {
   }, [selectedIndex, suggestions.length]);
 
   // Handle form submission
-  const handleSubmitGuess = (e: React.FormEvent) => {
+  const handleSubmitGuess = async (e: React.FormEvent) => {
     e.preventDefault()
     if (currentGuess.trim() === '') return
-    
-    makeGuess(currentGuess)
+
+    if (!isGuest && session?.access_token) {
+      await submitGuessToServer(currentGuess, session.access_token)
+    } else {
+      await makeGuess(currentGuess)
+    }
+
     setCurrentGuess('')
     setShowSuggestions(false)
     setJustSelected(false)
-    setSelectedIndex(-1) // Reset selection index after submission
+    setSelectedIndex(-1)
   }
 
   // Handle suggestion selection
@@ -221,6 +257,18 @@ const PokedexUI: React.FC = () => {
         
         {/* Pokemon name input form */}
         <div className="guess-input-container">
+          {staleLock && (
+            <div className="flex items-center justify-between bg-orange-50 border border-orange-300 text-orange-800 text-sm rounded-lg px-3 py-2 mb-2">
+              <span>⚠️ That game state changed elsewhere. Refresh to continue.</span>
+              <button
+                className="underline text-orange-700 font-medium ml-2"
+                onClick={() => clearStaleLock()}
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+          <div className={inputShaking ? 'guess-shake' : ''}>
           <form ref={formRef} onSubmit={handleSubmitGuess} className="guess-form">
             <input
               ref={inputRef}
@@ -229,22 +277,22 @@ const PokedexUI: React.FC = () => {
               onChange={(e) => {
                 setCurrentGuess(e.target.value)
                 setShowSuggestions(e.target.value.length > 0)
-                setSelectedIndex(-1) // Only reset when the input text changes
+                setSelectedIndex(-1)
               }}
               onKeyDown={handleKeyDown}
               className="guess-input"
               placeholder="Enter Pokémon name..."
               autoComplete="off"
               autoFocus
-              disabled={gameStatus !== 'playing'}
+              disabled={gameStatus !== 'playing' || isSubmitting || staleLock || !!rateLimitSeconds}
             />
-            
+
             {/* Masterball submit button */}
             <div className="masterball-button-container">
-              <button 
-                type="submit" 
+              <button
+                type="submit"
                 className="masterball-button"
-                disabled={currentGuess.trim() === '' || gameStatus !== 'playing'}
+                disabled={currentGuess.trim() === '' || gameStatus !== 'playing' || isSubmitting || staleLock || !!rateLimitSeconds}
                 aria-label="Submit guess"
               >
                 <div className="masterball">
@@ -282,6 +330,24 @@ const PokedexUI: React.FC = () => {
               </div>
             )}
           </form>
+          </div>
+          {rateLimitSeconds && (
+            <p className="text-center text-sm text-yellow-700 mt-2">
+              ⏳ Slow down, Trainer! Try again in {rateLimitSeconds}s
+            </p>
+          )}
+          {isSubmitting && (
+            <p className="text-center text-sm text-blue-600 mt-2 animate-pulse">
+              Scanning Pokédex...
+            </p>
+          )}
+          {gameStatus !== 'playing' && (
+            <div className={`game-over-banner ${gameStatus === 'won' ? 'win-animate' : ''}`}>
+              {gameStatus === 'won'
+                ? '🏆 You caught it! Come back tomorrow.'
+                : `😔 Today's Pokémon was ${dailyPokemon?.name}. Try again tomorrow!`}
+            </div>
+          )}
         </div>
       </div>
       

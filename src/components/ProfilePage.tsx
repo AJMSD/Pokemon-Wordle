@@ -72,7 +72,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack, onTierUpgradeAvailabl
         {/* Avatar + username */}
         <div className="flex flex-col items-center gap-3 mb-6">
           {avatarUrl ? (
-            <img src={avatarUrl} alt="avatar" className="w-16 h-16 rounded-lg" />
+            <img src={avatarUrl} alt="avatar" className="w-16 h-16 rounded-lg" loading="lazy" decoding="async" width={64} height={64} />
           ) : (
             <DefaultAvatar size={64} />
           )}
@@ -83,6 +83,10 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack, onTierUpgradeAvailabl
                 src={`${SPRITE_BASE}/${displayBall}.png`}
                 alt={ballName}
                 className="w-4 h-4 object-contain"
+                loading="lazy"
+                decoding="async"
+                width={16}
+                height={16}
               />
               <p className="text-xs text-gray-500">{ballName}</p>
             </div>
@@ -101,7 +105,14 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack, onTierUpgradeAvailabl
             Sign in to track your stats
           </div>
         ) : loading ? (
-          <div className="text-center py-4 text-gray-400 text-sm">Loading…</div>
+          <div className="animate-pulse space-y-2">
+            <div className="grid grid-cols-4 gap-2">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="h-12 bg-gray-100 rounded-lg" />
+              ))}
+            </div>
+            <div className="h-8 bg-gray-100 rounded-lg" />
+          </div>
         ) : error ? (
           <div className="text-center py-4">
             <p className="text-sm text-gray-500 mb-2">Could not load profile</p>

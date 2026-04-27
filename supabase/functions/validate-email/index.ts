@@ -1,4 +1,6 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { checkRateLimit } from '../_shared/rateLimit.ts';
 
 // Common disposable/temporary email domains
 const DISPOSABLE_DOMAINS = new Set([
@@ -44,9 +46,15 @@ const DISPOSABLE_DOMAINS = new Set([
   'hosting.3utilities.com', 'hot-mail.gq', 'hotpop.com', 'hulapla.de',
 ]);
 
+function getClientIP(req: Request): string {
+  return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+}
+
 Deno.serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
+
+  const start = Date.now();
 
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
@@ -55,7 +63,24 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  const supabaseAdmin = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  );
+
   try {
+    const clientIP = getClientIP(req);
+    const rateLimit = await checkRateLimit(supabaseAdmin, `validate-email:ip:${clientIP}`, 10, 60);
+    if (!rateLimit.allowed) {
+      return new Response(
+        JSON.stringify({ error: 'Rate limit exceeded', retry_after: rateLimit.retryAfter }),
+        {
+          status: 429,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': String(rateLimit.retryAfter) },
+        }
+      );
+    }
+
     const { email } = await req.json();
 
     if (!email || typeof email !== 'string') {
@@ -76,6 +101,8 @@ Deno.serve(async (req: Request) => {
     const domain = parts[1];
     const isDisposable = DISPOSABLE_DOMAINS.has(domain);
 
+    console.log(JSON.stringify({ fn: 'validate-email', method: req.method, user_id: null, status: 200, duration_ms: Date.now() - start }));
+
     return new Response(
       JSON.stringify({
         valid: !isDisposable,
@@ -87,7 +114,7 @@ Deno.serve(async (req: Request) => {
       }
     );
   } catch (err) {
-    console.error('validate-email error:', err);
+    console.error(JSON.stringify({ fn: 'validate-email', error: String(err), status: 500 }));
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

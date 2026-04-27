@@ -29,6 +29,11 @@ interface Stats {
   total_wins: number;
   win_rate: number;
   avg_guesses: number;
+  participation_streak: number;
+  max_participation_streak: number;
+  total_losses: number;
+  guess_distribution: Record<string, number>;
+  best_guess_summary: string | null;
 }
 
 interface AuthState {
@@ -38,6 +43,7 @@ interface AuthState {
   stats: Stats | null;
   isLoading: boolean;
   isGuest: boolean;
+  pendingPasswordRecovery: boolean;
 }
 
 interface AuthActions {
@@ -52,6 +58,8 @@ interface AuthActions {
   updateAvatar: (config: Partial<AvatarConfig>) => Promise<{ error: string | null }>;
   fetchMe: () => Promise<{ error: string | null }>;
   updateDisplayBall: (ballId: string) => Promise<{ error: string | null }>;
+  setupUsername: (username: string) => Promise<{ error: string | null }>;
+  clearPasswordRecovery: () => void;
 }
 
 const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
@@ -61,6 +69,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   stats: null,
   isLoading: true,
   isGuest: true,
+  pendingPasswordRecovery: false,
 
   initialize: async () => {
     set({ isLoading: true });
@@ -90,7 +99,11 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       set({ isLoading: false });
     }
 
-    supabase.auth.onAuthStateChange(async (_event, session) => {
+    supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        set({ pendingPasswordRecovery: true });
+        return;
+      }
       if (session) {
         const { data: profile } = await supabase
           .from('profiles')
@@ -121,7 +134,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       });
       const validateData = await validateRes.json();
       if (!validateData.valid) {
-        return { error: validateData.reason ?? 'Email address not allowed' };
+        return { error: validateData.reason ?? "That email isn't accepted by the Pokédex. Try another." };
       }
     } catch {
       // If validation endpoint is unreachable, allow signup to proceed
@@ -147,7 +160,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         body: JSON.stringify({ username }),
       });
       const data = await res.json();
-      if (!res.ok) return { error: data.error ?? 'Failed to create profile' };
+      if (!res.ok) return { error: data.error ?? "Couldn't register your Trainer Card. Try again." };
     }
 
     return { error: null };
@@ -165,7 +178,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
 
   sendPasswordReset: async (email) => {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
+      redirectTo: window.location.href.split('#')[0],
     });
     return { error: error?.message ?? null };
   },
@@ -177,7 +190,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
 
   resendVerification: async () => {
     const { user } = get();
-    if (!user?.email) return { error: 'No user email found' };
+    if (!user?.email) return { error: 'No email on file. Please sign out and try again.' };
     const { error } = await supabase.auth.resend({ type: 'signup', email: user.email });
     return { error: error?.message ?? null };
   },
@@ -191,9 +204,41 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     });
   },
 
-  updateAvatar: async (_config) => {
-    // TODO Phase 8: call update-profile edge function
-    return { error: null };
+  updateAvatar: async (config) => {
+    const { session, profile } = get();
+    if (!session) return { error: 'Sign in first, Trainer!' };
+
+    const base = import.meta.env.VITE_SUPABASE_URL as string;
+    const prevProfile = profile;
+
+    set(state => ({
+      profile: state.profile
+        ? { ...state.profile, avatar_config: { ...state.profile.avatar_config, ...config } }
+        : null,
+    }));
+
+    try {
+      const res = await fetch(`${base}/functions/v1/update-profile`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify(config),
+      });
+
+      if (!res.ok) {
+        set({ profile: prevProfile });
+        const d = await res.json().catch(() => ({}));
+        return { error: d.error ?? "Couldn't update your Trainer avatar. Try again." };
+      }
+
+      const d = await res.json();
+      set(state => ({
+        profile: state.profile ? { ...state.profile, avatar_config: d.avatar_config } : null,
+      }));
+      return { error: null };
+    } catch {
+      set({ profile: prevProfile });
+      return { error: 'Connection lost. Check your signal and try again.' };
+    }
   },
 
   fetchMe: async () => {
@@ -205,8 +250,8 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       const res = await fetch(`${supabaseUrl}/functions/v1/get-me`, {
         headers: { 'Authorization': `Bearer ${session.access_token}` },
       });
-      if (res.status === 401) return { error: 'Not signed in' };
-      if (res.status === 404) return { error: 'Profile not found' };
+      if (res.status === 401) return { error: "You're not signed in, Trainer." };
+      if (res.status === 404) return { error: 'Trainer profile not found. Try signing in again.' };
       const data = await res.json();
       set(state => ({
         profile: state.profile && data.profile
@@ -216,13 +261,13 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       }));
       return { error: null };
     } catch {
-      return { error: 'Failed to fetch profile' };
+      return { error: "Couldn't load your Trainer data. Try again." };
     }
   },
 
   updateDisplayBall: async (ballId) => {
     const { session } = get();
-    if (!session) return { error: 'Not signed in' };
+    if (!session) return { error: "You're not signed in, Trainer." };
 
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
     try {
@@ -242,9 +287,41 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       }
       return { error: data.error ?? null };
     } catch {
-      return { error: 'Failed to update display ball' };
+      return { error: "Couldn't update your display ball. Try again." };
     }
   },
+
+  setupUsername: async (username) => {
+    const { session } = get();
+    if (!session) return { error: "You're not signed in, Trainer." };
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    try {
+      const res = await fetch(`${supabaseUrl}/functions/v1/create-profile`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ username }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { error: data.error ?? "Couldn't save your Trainer name. Try again." };
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
+
+      set({ profile: profile ?? null });
+      return { error: null };
+    } catch {
+      return { error: "Couldn't save your Trainer name. Try again." };
+    }
+  },
+
+  clearPasswordRecovery: () => set({ pendingPasswordRecovery: false }),
 }));
 
 export { useAuthStore };

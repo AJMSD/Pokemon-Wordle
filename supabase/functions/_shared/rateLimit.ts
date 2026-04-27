@@ -1,4 +1,5 @@
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { isWindowExpired, isRateLimited, calcRetryAfterSeconds } from '../../../src/logic/rateLimitCalc.ts';
 
 export async function checkRateLimit(
   supabaseAdmin: SupabaseClient,
@@ -7,7 +8,6 @@ export async function checkRateLimit(
   windowSeconds: number
 ): Promise<{ allowed: boolean; retryAfter?: number }> {
   const now = new Date();
-  const windowStart = new Date(now.getTime() - windowSeconds * 1000);
 
   const { data: existing } = await supabaseAdmin
     .from('rate_limits')
@@ -22,9 +22,7 @@ export async function checkRateLimit(
     return { allowed: true };
   }
 
-  const recordWindowStart = new Date(existing.window_start);
-
-  if (recordWindowStart < windowStart) {
+  if (isWindowExpired(existing.window_start, windowSeconds, now.getTime())) {
     // Window expired — reset
     await supabaseAdmin
       .from('rate_limits')
@@ -33,9 +31,8 @@ export async function checkRateLimit(
     return { allowed: true };
   }
 
-  if (existing.count >= maxRequests) {
-    const windowEnds = new Date(recordWindowStart.getTime() + windowSeconds * 1000);
-    const retryAfter = Math.ceil((windowEnds.getTime() - now.getTime()) / 1000);
+  if (isRateLimited(existing.count, maxRequests)) {
+    const retryAfter = calcRetryAfterSeconds(existing.window_start, windowSeconds, now.getTime());
     return { allowed: false, retryAfter };
   }
 

@@ -1,9 +1,12 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { checkRateLimit } from '../_shared/rateLimit.ts';
 
 Deno.serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
+
+  const start = Date.now();
 
   if (req.method !== 'PATCH') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
@@ -38,6 +41,17 @@ Deno.serve(async (req: Request) => {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    const rateLimit = await checkRateLimit(supabaseAdmin, `update-profile:user:${user.id}`, 10, 60);
+    if (!rateLimit.allowed) {
+      return new Response(
+        JSON.stringify({ error: 'Rate limit exceeded', retry_after: rateLimit.retryAfter }),
+        {
+          status: 429,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': String(rateLimit.retryAfter) },
+        }
+      );
     }
 
     const body = await req.json();
@@ -96,12 +110,14 @@ Deno.serve(async (req: Request) => {
 
     if (updateError) throw updateError;
 
+    console.log(JSON.stringify({ fn: 'update-profile', method: req.method, user_id: user.id, status: 200, duration_ms: Date.now() - start }));
+
     return new Response(JSON.stringify({ avatar_config: merged }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {
-    console.error('update-profile error:', err);
+    console.error(JSON.stringify({ fn: 'update-profile', error: String(err), status: 500 }));
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

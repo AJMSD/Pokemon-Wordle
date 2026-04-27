@@ -2,12 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --pokedex-red: #DC0A2D;
+  --pokedex-screen-green: #98CB98;
+  --pokedex-blue-light: #3298CB;
+  --pokedex-black: #222224;
+  --pokedex-silver: #B0B0B0;
+}
+
 @layer base {
   html {
     font-family: 'Inter', system-ui, sans-serif;
     height: 100%;
   }
-  
+
   body {
     @apply bg-gray-100 text-gray-900;
     position: relative;
@@ -17,7 +25,7 @@
     flex-direction: column;
     justify-content: center;
   }
-  
+
   /* Pseudo-element for background with 50% opacity */
   body::before {
     content: "";
@@ -34,7 +42,7 @@
     opacity: 0.75;
     z-index: -1;
   }
-  
+
   /* Style for game container to make it vertically centered */
   .game-container {
     display: flex;
@@ -43,12 +51,12 @@
     justify-content: center;
   }
 }
-  
+
 @layer components {
   .btn {
     @apply px-4 py-2 rounded-md transition-colors;
   }
-  
+
   .btn-primary {
     @apply bg-pokemon-red text-white hover:bg-primary-700;
   }
@@ -68,7 +76,7 @@
 
 /* Left panel styles */
 .pokedex-left-panel {
-  background-color: #DC0A2D;
+  background-color: var(--pokedex-red);
   border-radius: 10px;
   padding: 10px;
   width: 100%;
@@ -90,7 +98,7 @@
   width: 60px;
   height: 60px;
   border-radius: 50%;
-  background-color: #3298cb;
+  background-color: var(--pokedex-blue-light);
   border: 2px solid white;
   box-shadow: 0 0 5px 2px rgba(0, 0, 0, 0.2) inset;
   animation: blinkLight 2s infinite alternate;
@@ -138,7 +146,7 @@
 
 .main-screen-container {
   padding: 15px;
-  background-color: #B0B0B0;
+  background-color: var(--pokedex-silver);
   border-radius: 5px;
   margin-bottom: 15px;
   flex-grow: 1; /* Allow this to take available space */
@@ -147,7 +155,7 @@
 }
 
 .main-screen {
-  background-color: #222224;
+  background-color: var(--pokedex-black);
   border: 3px solid #111;
   border-radius: 5px;
   height: 300px;
@@ -226,13 +234,13 @@
   height: 10px;
   background-color: #111;
   border-radius: 50%;
-  transition: all 0.5s ease;
+  transition: background-color 0.5s ease, box-shadow 0.5s ease;
   position: relative;
 }
 
 .sound-hole.win-glow {
   background: radial-gradient(circle at 30% 30%, #FFA500, #FF6347);
-  box-shadow: 
+  box-shadow:
     0 0 8px 2px rgba(255, 140, 0, 0.6),
     inset 0 1px 2px rgba(255, 255, 255, 0.8),
     inset -1px -1px 4px rgba(0, 0, 0, 0.2);
@@ -242,14 +250,14 @@
 
 @keyframes pulseGlow {
   0% {
-    box-shadow: 
+    box-shadow:
       0 0 8px 2px rgba(255, 140, 0, 0.6),
       inset 0 1px 2px rgba(255, 255, 255, 0.8),
       inset -1px -1px 4px rgba(0, 0, 0, 0.2);
     transform: translateZ(1px);
   }
   100% {
-    box-shadow: 
+    box-shadow:
       0 0 12px 4px rgba(255, 140, 0, 0.8),
       inset 0 2px 3px rgba(255, 255, 255, 0.9),
       inset -2px -2px 6px rgba(0, 0, 0, 0.3);
@@ -272,11 +280,21 @@
 .guess-input {
   flex: 1;
   padding: 10px;
-  background-color: #98CB98;
-  border: 2px solid #222224;
+  background-color: var(--pokedex-screen-green);
+  border: 2px solid var(--pokedex-black);
   border-radius: 5px;
   font-size: 16px;
   color: #222;
+}
+
+.guess-input:focus {
+  box-shadow: 0 0 0 3px rgba(50, 152, 203, 0.35);
+  outline: none;
+}
+
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .suggestions-dropdown {
@@ -291,6 +309,7 @@
   overflow-y: auto;
   z-index: 10;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  animation: slide-down 150ms ease-out;
 }
 
 .suggestion-item {
@@ -310,40 +329,41 @@
 
 .suggestion-item.active-suggestion {
   background-color: #edf2f7;
-  border-left: 3px solid #DC0A2D;
+  border-left: 3px solid var(--pokedex-red);
 }
 
 .guess-button {
   padding: 10px;
-  background-color: #3298cb;
+  background-color: var(--pokedex-blue-light);
   color: white;
   border: none;
   border-radius: 5px;
   font-weight: bold;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: transform 150ms ease-out, background-color 0.2s;
 }
 
 .guess-button:hover {
   background-color: #1a7bb9;
+  transform: scale(1.02);
 }
 
 /* Right panel styles */
 .pokedex-right-panel {
-  background-color: #DC0A2D;
+  background-color: var(--pokedex-red);
   border-radius: 10px;
   padding: 15px;
   width: 100%;
   max-width: 500px;
   box-shadow: -3px 2px 10px 3px rgba(0,0,0,0.3);
-  height: 700px; 
+  height: 700px;
   display: flex;
   flex-direction: column;
 }
 
 .right-panel-screen {
-  background-color: #98CB98;
-  border: 2px solid #222224;
+  background-color: var(--pokedex-screen-green);
+  border: 2px solid var(--pokedex-black);
   border-radius: 5px;
   padding: 10px;
   margin-bottom: 15px;
@@ -369,19 +389,19 @@
     align-items: center;
     min-height: auto; /* Allow it to size based on content on mobile */
   }
-  
+
   .pokedex-left-panel,
   .pokedex-right-panel {
     max-width: 100%;
     height: auto; /* Auto height on mobile */
     min-height: 500px; /* Still maintain a minimum height */
   }
-  
+
   .main-screen {
     height: 200px;
     flex-grow: 0; /* Don't grow on mobile */
   }
-  
+
   .guesses-container {
     max-height: 350px; /* Fixed height on mobile */
     flex-grow: 0; /* Don't grow on mobile */
@@ -393,16 +413,16 @@
     flex-direction: column;
     align-items: center;
   }
-  
+
   .pokedex-left-panel,
   .pokedex-right-panel {
     max-width: 100%;
   }
-  
+
   .main-screen {
     height: 200px;
   }
-  
+
   .pokemon-image {
     max-width: 150px;
     max-height: 150px;
@@ -418,7 +438,7 @@
   font-size: 18px;
   font-weight: bold;
   margin-bottom: 10px;
-  color: #222224;
+  color: var(--pokedex-black);
 }
 
 .info-sections {
@@ -436,7 +456,7 @@
 .info-label {
   font-weight: bold;
   min-width: 100px;
-  color: #222224;
+  color: var(--pokedex-black);
 }
 
 .info-value {
@@ -445,8 +465,8 @@
 
 .revealed-value {
   font-weight: 600;
-  color: #DC0A2D;
-  transition: all 0.3s ease;
+  color: var(--pokedex-red);
+  transition: color 0.3s ease;
 }
 
 .hint-new {
@@ -547,7 +567,7 @@
   width: 40px;
   height: 40px;
   position: relative;
-  transition: transform 0.2s ease, box-shadow 0.3s ease;
+  transition: transform 200ms ease-out, box-shadow 0.3s ease;
   border-radius: 50%;
   overflow: hidden;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
@@ -639,7 +659,7 @@
 /* Hint glow effect */
 .hint-container {
   position: relative;
-  transition: all 0.3s ease;
+  transition: box-shadow 0.3s ease;
 }
 
 .hint-glow {
@@ -699,56 +719,71 @@
     flex-direction: column;
     align-items: center;
   }
-  
+
   .pokedex-left-panel,
   .pokedex-right-panel {
     max-width: 100%;
     width: 100%;
   }
-  
+
   .main-screen {
     height: 250px;
     overflow: hidden;
   }
-  
+
   .pokemon-image {
     max-width: 80%;
     max-height: 80%;
   }
-  
+
   .right-panel-screen {
     display: none; /* Hide the hint panel in the right section on mobile */
   }
-  
+
   .guesses-container {
     max-height: 350px;
   }
-  
+
   /* Enhance mobile specific elements */
   .mobile-hint-panel {
     display: flex;
     justify-content: center;
     align-items: center;
   }
-  
+
   .mobile-hint-panel .info-sections {
     width: 90%;
   }
-  
+
   /* Adjust spacing on mobile */
   .guess-input-container {
     padding: 10px;
   }
-  
+
   /* Make the masterball button slightly smaller on mobile */
   .masterball {
     width: 35px;
     height: 35px;
   }
-  
+
   /* Better spacing for mobile view */
   .pokedex-right-panel {
     margin-top: 15px;
+  }
+
+  /* Mobile touch targets */
+  header .text-sm {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .suggestion-item {
+    padding: 12px 14px;
+  }
+
+  .game-over-banner {
+    padding: 12px 16px;
   }
 }
 
@@ -824,4 +859,71 @@ header h1 {
     height: 24px;
     font-size: 0.8em;
   }
+}
+
+/* Phase 8 animations */
+@keyframes win-flash {
+  0%   { opacity: 0; transform: scale(0.8); }
+  50%  { opacity: 1; transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.win-animate { animation: win-flash 0.6s ease-out forwards; will-change: transform, opacity; }
+
+@keyframes ball-burst {
+  0%   { transform: scale(0.3); opacity: 0; }
+  60%  { transform: scale(1.25); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.ball-burst-animate { animation: ball-burst 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; will-change: transform; }
+
+@keyframes guess-shake {
+  0%, 100% { transform: translateX(0); }
+  20%  { transform: translateX(-6px); }
+  40%  { transform: translateX(6px); }
+  60%  { transform: translateX(-4px); }
+  80%  { transform: translateX(4px); }
+}
+.guess-shake { animation: guess-shake 0.4s ease-in-out; }
+
+@keyframes shimmer {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 1; }
+}
+.guess-pending { animation: shimmer 1s ease-in-out infinite; }
+
+.game-over-banner {
+  background: rgba(255,255,255,0.9);
+  border-radius: 8px;
+  padding: 8px 12px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 0.875rem;
+  margin-top: 8px;
+  color: #333;
+}
+
+/* Phase 9: Ball unlock ring animation */
+@keyframes unlock-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.8); }
+  70%  { box-shadow: 0 0 0 24px rgba(255, 215, 0, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0); }
+}
+.unlock-ring-animate {
+  border-radius: 50%;
+  animation: unlock-ring 0.8s ease-out;
+  will-change: box-shadow;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .win-animate, .ball-burst-animate, .guess-shake, .guess-pending {
+    animation: none;
+  }
+  .blue-light,
+  .pokemon-image,
+  .hint-new,
+  .sound-hole,
+  .hint-glow,
+  .masterball,
+  .unlock-ring-animate { animation: none !important; transition: none !important; }
+  .suggestions-dropdown { animation: none !important; }
 }

@@ -30,6 +30,8 @@ Deno.serve(async (req: Request) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
 
+  const start = Date.now();
+
   try {
     const supabaseUser = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -103,6 +105,8 @@ Deno.serve(async (req: Request) => {
       bestGuessSummary = `Solved in ${minKey[0]} guesses: ${minKey[1]} times`;
     }
 
+    console.log(JSON.stringify({ fn: 'get-stats', method: req.method, user_id: user.id, status: 200, duration_ms: Date.now() - start }));
+
     return new Response(
       JSON.stringify({
         total_participations: totalParticipations,
@@ -123,7 +127,7 @@ Deno.serve(async (req: Request) => {
       }
     );
   } catch (err) {
-    console.error('get-stats error:', err);
+    console.error(JSON.stringify({ fn: 'get-stats', error: String(err), status: 500 }));
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
