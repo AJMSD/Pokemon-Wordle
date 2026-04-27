@@ -44,6 +44,22 @@ const DISPOSABLE_DOMAINS = new Set([
   'grandmamail.com', 'grandmasmail.com', 'h8s.org', 'hakumail.com',
   'hatespam.org', 'herp.in', 'hidzz.com', 'hochsitze.com',
   'hosting.3utilities.com', 'hot-mail.gq', 'hotpop.com', 'hulapla.de',
+  'temp-mail.io', 'tempmail.plus', 'tempmail.ninja',
+  '1secmail.com', '1secmail.net', '1secmail.org', '1secmail.pl',
+  '10minutemail.com', '10minutemail.net', '10minutemail.org',
+  '20minutemail.com',
+  'mohmal.com', 'mohmal.im',
+  'fakemail.com', 'fakemail.net', 'emailfake.com',
+  'tmpmail.net', 'tmpmail.org',
+  'tempemail.co', 'tempemail.net',
+  'temporary-email.com', 'temporaryemail.com',
+  'disposableemail.com', 'disposablemail.com',
+  'trashmail.live', 'trashmail.xyz',
+  'mailtemp.net', 'mailtemp.org', 'mailtemp.info',
+  'spamhere.com', 'spamkill.info',
+  'harakirimail.com', 'mintemail.com',
+  'gettempemail.com', 'guerrillamail.co', 'guerrillamail.uk',
+  'anonaddy.me',
 ]);
 
 function getClientIP(req: Request): string {

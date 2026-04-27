@@ -117,7 +117,7 @@ function App() {
         </div>
       )}
       <Suspense fallback={<PageSkeleton />}>
-        <main>
+        <main className="pt-14 sm:pt-0">
           {showProfile
             ? (
               <ProfilePage

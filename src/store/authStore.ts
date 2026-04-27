@@ -44,6 +44,7 @@ interface AuthState {
   isLoading: boolean;
   isGuest: boolean;
   pendingPasswordRecovery: boolean;
+  pendingEmail: string | null;
 }
 
 interface AuthActions {
@@ -70,6 +71,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   isLoading: true,
   isGuest: true,
   pendingPasswordRecovery: false,
+  pendingEmail: null,
 
   initialize: async () => {
     set({ isLoading: true });
@@ -116,9 +118,10 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
           session,
           profile: profile ?? null,
           isGuest: false,
+          pendingEmail: null,
         });
       } else {
-        set({ user: null, session: null, profile: null, stats: null, isGuest: true });
+        set({ user: null, session: null, profile: null, stats: null, isGuest: true, pendingEmail: null });
       }
     });
   },
@@ -143,10 +146,15 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { username } },
+      options: {
+        data: { username },
+        emailRedirectTo: 'https://ajmsd.github.io/Pokemon-Wordle',
+      },
     });
 
     if (error) return { error: error.message };
+
+    set({ pendingEmail: email });
 
     const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL) as string;
     const { data: { session: newSession } } = await supabase.auth.getSession();
@@ -173,7 +181,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
 
   signOut: async () => {
     await supabase.auth.signOut();
-    set({ user: null, session: null, profile: null, stats: null, isGuest: true });
+    set({ user: null, session: null, profile: null, stats: null, isGuest: true, pendingEmail: null });
   },
 
   sendPasswordReset: async (email) => {
@@ -189,9 +197,14 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   },
 
   resendVerification: async () => {
-    const { user } = get();
-    if (!user?.email) return { error: 'No email on file. Please sign out and try again.' };
-    const { error } = await supabase.auth.resend({ type: 'signup', email: user.email });
+    const { user, pendingEmail } = get();
+    const email = user?.email ?? pendingEmail;
+    if (!email) return { error: 'No email on file. Please sign out and try again.' };
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: { emailRedirectTo: 'https://ajmsd.github.io/Pokemon-Wordle' },
+    });
     return { error: error?.message ?? null };
   },
 
