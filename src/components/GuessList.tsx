@@ -27,7 +27,7 @@ const GuessList: React.FC = () => {
       <h2 className="guesses-title">Your Guesses</h2>
       <ul className="guess-items">
         {guesses.map((guess, index) => {
-          const isCorrect = guess === dailyPokemon?.name;
+          const isCorrect = normalizePokemonName(guess) === normalizePokemonName(dailyPokemon?.name ?? '');
           const normalizedGuess = normalizePokemonName(guess);
           const normalizedTarget = dailyPokemon ? normalizePokemonName(dailyPokemon.name) : '';
           const letterResults = getLetterMatchResult(normalizedGuess, normalizedTarget);

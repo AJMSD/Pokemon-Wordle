@@ -135,9 +135,16 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
-      const validateData = await validateRes.json();
-      if (!validateData.valid) {
-        return { error: validateData.reason ?? "That email isn't accepted by the Pokédex. Try another." };
+      if (!validateRes.ok) {
+        if (validateRes.status === 429) {
+          return { error: "Too many sign-up attempts. Wait a moment and try again." };
+        }
+        // Validation endpoint unreachable — allow signup to proceed
+      } else {
+        const validateData = await validateRes.json();
+        if (!validateData.valid) {
+          return { error: validateData.reason ?? "That email isn't accepted by the Pokédex. Try another." };
+        }
       }
     } catch {
       // If validation endpoint is unreachable, allow signup to proceed

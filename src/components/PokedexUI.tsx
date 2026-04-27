@@ -16,6 +16,7 @@ const PokedexUI: React.FC = () => {
   } = useGameStore()
   const session = useAuthStore(state => state.session)
   const isGuest = useAuthStore(state => state.isGuest)
+  const fetchMe = useAuthStore(state => state.fetchMe)
   const { getSuggestions } = useGame()
   const { showError, addToast } = useToast()
   const [showSuggestions, setShowSuggestions] = useState(false)
@@ -122,7 +123,8 @@ const PokedexUI: React.FC = () => {
     if (currentGuess.trim() === '') return
 
     if (!isGuest && session?.access_token) {
-      await submitGuessToServer(currentGuess, session.access_token)
+      const won = await submitGuessToServer(currentGuess, session.access_token)
+      if (won) fetchMe()
     } else {
       await makeGuess(currentGuess)
     }

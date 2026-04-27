@@ -30,7 +30,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack, onTierUpgradeAvailabl
   const [showPicker, setShowPicker] = useState(false)
 
   useEffect(() => {
-    if (isGuest || stats !== null) return
+    if (isGuest) return
     setLoading(true)
     fetchMe().then(({ error }) => {
       setError(error)
