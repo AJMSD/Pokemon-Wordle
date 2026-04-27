@@ -72,13 +72,13 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack, onTierUpgradeAvailabl
         {/* Avatar + username */}
         <div className="flex flex-col items-center gap-3 mb-6">
           {avatarUrl ? (
-            <img src={avatarUrl} alt="avatar" className="w-16 h-16 rounded-lg" loading="lazy" decoding="async" width={64} height={64} />
+            <img src={avatarUrl} alt="avatar" className="w-24 h-24 rounded-xl border-2 border-gray-100 shadow-sm" loading="lazy" decoding="async" width={96} height={96} />
           ) : (
-            <DefaultAvatar size={64} />
+            <DefaultAvatar size={96} />
           )}
           <div className="text-center">
-            <p className="text-lg font-bold text-gray-900">{profile?.username ?? '—'}</p>
-            <div className="flex items-center justify-center gap-1 mt-0.5">
+            <p className="text-xl font-bold text-gray-900">{profile?.username ?? '—'}</p>
+            <div className="flex items-center justify-center gap-1 mt-1">
               <img
                 src={`${SPRITE_BASE}/${displayBall}.png`}
                 alt={ballName}
@@ -88,12 +88,12 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack, onTierUpgradeAvailabl
                 width={16}
                 height={16}
               />
-              <p className="text-xs text-gray-500">{ballName}</p>
+              <p className="text-xs text-gray-500 font-medium">{ballName}</p>
             </div>
           </div>
           <button
             onClick={() => setShowPicker(true)}
-            className="text-xs text-pokemon-red font-semibold hover:underline"
+            className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold px-3 py-1.5 rounded-full transition-colors"
           >
             Change Avatar
           </button>
@@ -101,8 +101,9 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack, onTierUpgradeAvailabl
 
         {/* Stats section */}
         {isGuest ? (
-          <div className="text-center py-4 text-gray-400 text-sm">
-            Sign in to track your stats
+          <div className="text-center py-6 bg-gray-50 rounded-xl">
+            <p className="text-sm font-semibold text-gray-700 mb-0.5">Sign in to track your stats</p>
+            <p className="text-xs text-gray-400">Win streaks, guesses, and more</p>
           </div>
         ) : loading ? (
           <div className="animate-pulse space-y-2">
@@ -129,25 +130,25 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack, onTierUpgradeAvailabl
           </div>
         ) : stats ? (
           <>
-            <div className="grid grid-cols-4 gap-2 text-center mb-4">
-              <div className="bg-gray-50 rounded-lg p-2">
-                <p className="text-lg font-bold text-gray-900">{stats.current_streak}</p>
-                <p className="text-xs text-gray-500 leading-tight mt-0.5">Streak</p>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div className="bg-gray-50 rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold text-gray-900">{stats.current_streak}</p>
+                <p className="text-xs text-gray-500 mt-0.5">Current Streak</p>
               </div>
-              <div className="bg-gray-50 rounded-lg p-2">
-                <p className="text-lg font-bold text-gray-900">{stats.max_streak}</p>
-                <p className="text-xs text-gray-500 leading-tight mt-0.5">Best</p>
+              <div className="bg-gray-50 rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold text-gray-900">{stats.max_streak}</p>
+                <p className="text-xs text-gray-500 mt-0.5">Best Streak</p>
               </div>
-              <div className="bg-gray-50 rounded-lg p-2">
-                <p className="text-lg font-bold text-gray-900">{winPct}%</p>
-                <p className="text-xs text-gray-500 leading-tight mt-0.5">Win Rate</p>
+              <div className="bg-gray-50 rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold text-gray-900">{winPct}%</p>
+                <p className="text-xs text-gray-500 mt-0.5">Win Rate</p>
               </div>
-              <div className="bg-gray-50 rounded-lg p-2">
-                <p className="text-lg font-bold text-gray-900">{stats.avg_guesses > 0 ? stats.avg_guesses.toFixed(1) : '—'}</p>
-                <p className="text-xs text-gray-500 leading-tight mt-0.5">Avg</p>
+              <div className="bg-gray-50 rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold text-gray-900">{stats.avg_guesses > 0 ? stats.avg_guesses.toFixed(1) : '—'}</p>
+                <p className="text-xs text-gray-500 mt-0.5">Avg Guesses</p>
               </div>
             </div>
-            <div className="bg-gray-50 rounded-lg px-3 py-2 text-xs text-gray-500 text-center">
+            <div className="bg-gray-50 rounded-xl px-3 py-2.5 text-xs text-gray-500 text-center font-medium">
               {stats.total_participations} played · {stats.total_wins}W · {totalLosses}L
             </div>
           </>

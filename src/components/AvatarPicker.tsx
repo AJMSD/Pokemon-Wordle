@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useAuthStore } from '../store/authStore'
 
 interface AvatarPickerProps {
   onClose: () => void
@@ -9,9 +10,19 @@ const SPRITE_BASE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sp
 const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
   const [selected, setSelected] = useState<number | null>(null)
   const [isShiny, setIsShiny] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const updateAvatar = useAuthStore(state => state.updateAvatar)
 
   const spriteUrl = (id: number) =>
     isShiny ? `${SPRITE_BASE}/shiny/${id}.png` : `${SPRITE_BASE}/${id}.png`
+
+  async function handleConfirm() {
+    if (!selected) return
+    setSaving(true)
+    await updateAvatar({ avatar_mode: 'pokemon', avatar_pokemon_id: selected, avatar_is_shiny: isShiny })
+    setSaving(false)
+    onClose()
+  }
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
@@ -52,13 +63,19 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
           ))}
         </div>
 
-        {/* TODO Phase 8: call update-profile edge function on confirm */}
         <div className="flex gap-3">
           <button
             onClick={onClose}
             className="flex-1 py-2 rounded-lg border border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 transition-colors"
           >
-            Close
+            Cancel
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={!selected || saving}
+            className="flex-1 py-2 rounded-lg bg-pokemon-red text-white font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? 'Saving...' : 'Confirm'}
           </button>
         </div>
       </div>

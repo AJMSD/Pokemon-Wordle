@@ -22,13 +22,12 @@ interface BallsResponse {
 const SPRITE_BASE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items'
 const STANDARD_ORDER = ['poke-ball', 'great-ball', 'ultra-ball', 'master-ball']
 
-const GUEST_STANDARD: BallEntry[] = STANDARD_ORDER.map(id => ({
-  id,
-  display_name: BALL_NAMES[id],
-  category: 'standard',
-  status: 'locked',
-  hint: null,
-}))
+const GUEST_STANDARD: BallEntry[] = [
+  { id: 'poke-ball',   display_name: BALL_NAMES['poke-ball'],   category: 'standard', status: 'current_tier', hint: null },
+  { id: 'great-ball',  display_name: BALL_NAMES['great-ball'],  category: 'standard', status: 'future_tier',  hint: null },
+  { id: 'ultra-ball',  display_name: BALL_NAMES['ultra-ball'],  category: 'standard', status: 'future_tier',  hint: null },
+  { id: 'master-ball', display_name: BALL_NAMES['master-ball'], category: 'standard', status: 'future_tier',  hint: null },
+]
 
 const GUEST_ACHIEVEMENT: BallEntry[] = [
   { id: 'quick-ball',  display_name: 'Quick Ball',  category: 'achievement', status: 'locked', hint: 'Solve a puzzle in 1 or 2 guesses' },
@@ -96,8 +95,9 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
       <p className="text-sm text-gray-500 mb-6">Earn balls by playing and achieving milestones.</p>
 
       {isGuest && (
-        <div className="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-4 text-center text-sm text-blue-700 font-medium">
-          Sign in to track your progress and unlock balls
+        <div className="mb-6 bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-xl p-4 text-center">
+          <p className="text-sm font-bold text-gray-800 mb-0.5">Sign in to start earning balls</p>
+          <p className="text-xs text-gray-500">Track your streak and unlock achievement balls</p>
         </div>
       )}
 
@@ -151,7 +151,16 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
                           {isFuture ? (
                             <span className="text-gray-400 text-lg">?</span>
                           ) : (
-                            <img src={`${SPRITE_BASE}/${ball.id}.png`} alt={ball.display_name} className="w-8 h-8 object-contain" loading="lazy" decoding="async" width={32} height={32} />
+                            <img
+                              src={`${SPRITE_BASE}/${ball.id}.png`}
+                              alt={ball.display_name}
+                              className="w-8 h-8 object-contain"
+                              loading="lazy"
+                              decoding="async"
+                              width={32}
+                              height={32}
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                            />
                           )}
                         </button>
                         <span className={`text-xs text-center leading-tight max-w-[56px] ${isFuture ? 'text-gray-400' : 'text-gray-700'}`}>
@@ -203,7 +212,16 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
                     } ${isSelected ? 'border-pokemon-blue ring-1 ring-pokemon-blue' : ''}`}
                   >
                     {isUnlocked ? (
-                      <img src={`${SPRITE_BASE}/${ball.id}.png`} alt={ball.display_name} className="w-12 h-12 object-contain" loading="lazy" decoding="async" width={48} height={48} />
+                      <img
+                        src={`${SPRITE_BASE}/${ball.id}.png`}
+                        alt={ball.display_name}
+                        className="w-12 h-12 object-contain"
+                        loading="lazy"
+                        decoding="async"
+                        width={48}
+                        height={48}
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                      />
                     ) : (
                       <div className="w-12 h-12 rounded-full bg-gray-300 border-2 border-gray-400 flex items-center justify-center">
                         <span className="text-gray-500 text-lg">?</span>

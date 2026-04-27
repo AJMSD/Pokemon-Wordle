@@ -19,19 +19,18 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
   const ballName = BALL_NAMES[displayBall] ?? 'Poké Ball'
 
   return (
-    <header className="mb-8 text-center relative">
-      <h1 className="font-pixel text-2xl md:text-3xl text-pokemon-red mb-2 tracking-wide">
-        Wurmple
-        <span className="inline-block ml-2 transform -rotate-12">
-          <svg width="32" height="32" viewBox="0 0 24 24" className="fill-pokemon-red">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-5-9c.83 0 1.5-.67 1.5-1.5S7.83 8 7 8s-1.5.67-1.5 1.5S6.17 11 7 11zm10 0c.83 0 1.5-.67 1.5-1.5S17.83 8 17 8s-1.5.67-1.5 1.5.67 1.5 1.5 1.5zM12 17.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/>
-          </svg>
-        </span>
-      </h1>
-      <p className="text-gray-600 md:text-lg mb-1">
-        Guess the Daily Pokémon from the Pokédex!
-      </p>
-      <div className="absolute top-0 right-0 flex items-center gap-2">
+    <header className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-gray-200 bg-white/80 backdrop-blur-sm sticky top-0 z-20 rounded-t-lg mb-6">
+      {/* Left: Logo + title */}
+      <div className="flex items-center gap-2">
+        <svg width="26" height="26" viewBox="0 0 24 24" className="fill-pokemon-red flex-shrink-0">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-5-9c.83 0 1.5-.67 1.5-1.5S7.83 8 7 8s-1.5.67-1.5 1.5S6.17 11 7 11zm10 0c.83 0 1.5-.67 1.5-1.5S17.83 8 17 8s-1.5.67-1.5 1.5.67 1.5 1.5 1.5zM12 17.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/>
+        </svg>
+        <h1 className="font-pixel text-lg sm:text-xl md:text-2xl text-pokemon-red tracking-wide leading-none">Wurmple</h1>
+      </div>
+
+      {/* Right: ball badge + nav + auth */}
+      <div className="flex items-center gap-2 sm:gap-3">
+        {/* Ball badge pill */}
         <div className="flex items-center gap-1 bg-gray-100 border border-gray-200 rounded-full px-2 py-0.5">
           <img
             src={`${SPRITE_BASE}/${displayBall}.png`}
@@ -42,15 +41,19 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
             width={16}
             height={16}
           />
-          <span className="font-pixel text-xs font-medium text-gray-600">{isGuest ? 'Guest' : ballName}</span>
+          <span className="font-pixel text-xs font-medium text-gray-600 hidden sm:inline">
+            {isGuest ? 'Guest' : ballName}
+          </span>
           {!isGuest && stats !== null && (
-            <span className="font-pixel text-xs text-gray-400 ml-0.5">🔥 {stats.current_streak}</span>
+            <span className="font-pixel text-xs text-gray-400 ml-0.5">🔥{stats.current_streak}</span>
           )}
         </div>
+
+        {/* Nav links (auth users only) */}
         {!isGuest && onShowCollection && (
           <button
             onClick={onShowCollection}
-            className="text-sm font-semibold text-pokemon-red hover:underline"
+            className="text-sm font-semibold text-gray-700 hover:text-pokemon-red transition-colors hidden sm:block"
           >
             Collection
           </button>
@@ -58,22 +61,24 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
         {!isGuest && onShowProfile && (
           <button
             onClick={onShowProfile}
-            className="text-sm font-semibold text-pokemon-red hover:underline"
+            className="text-sm font-semibold text-gray-700 hover:text-pokemon-red transition-colors hidden sm:block"
           >
             Profile
           </button>
         )}
+
+        {/* Auth action */}
         {isGuest ? (
           <button
             onClick={onShowAuth}
-            className="text-sm font-semibold text-pokemon-red hover:underline"
+            className="bg-pokemon-red text-white px-3 sm:px-4 py-1.5 rounded-full text-sm font-semibold hover:bg-red-700 transition-colors"
           >
-            Sign In
+            Sign In →
           </button>
         ) : (
           <button
             onClick={signOut}
-            className="text-sm font-semibold text-gray-500 hover:text-gray-700 hover:underline"
+            className="text-sm font-semibold text-gray-500 hover:text-gray-700 transition-colors"
           >
             Sign Out
           </button>
