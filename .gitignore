@@ -51,3 +51,6 @@ context.md
 
 # Google OAuth secret
 client_secret*
+
+# Database backups
+backups/

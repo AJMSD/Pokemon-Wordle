@@ -33,6 +33,7 @@ export async function checkRateLimit(
 
   if (isRateLimited(existing.count, maxRequests)) {
     const retryAfter = calcRetryAfterSeconds(existing.window_start, windowSeconds, now.getTime());
+    console.warn(JSON.stringify({ fn: 'rateLimit', event: 'rate_limited', key, retryAfter }));
     return { allowed: false, retryAfter };
   }
 
