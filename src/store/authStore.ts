@@ -69,6 +69,8 @@ interface AuthActions {
   clearPasswordRecovery: () => void;
 }
 
+let fetchMeInFlight: { token: string; promise: Promise<{ error: string | null }> } | null = null;
+
 function writeUserCache(userId: string, profile: Profile | null, stats: Stats | null) {
   try {
     localStorage.setItem('wurmple_user_cache', JSON.stringify({
@@ -127,6 +129,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
           isGuest: false,
           isLoading: false,
         });
+        void get().fetchMe();
       } else {
         set({ isLoading: false });
       }
@@ -154,6 +157,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
           isGuest: false,
           pendingEmail: null,
         });
+        void get().fetchMe();
       } else {
         set({
           user: null,
@@ -331,36 +335,53 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     const { session } = get();
     if (!session) return { error: null };
 
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-    try {
-      const res = await fetch(`${supabaseUrl}/functions/v1/get-me`, {
-        headers: { 'Authorization': `Bearer ${session.access_token}` },
-      });
-      if (res.status === 401) return { error: "You're not signed in, Trainer." };
-      if (res.status === 404) return { error: 'Trainer profile not found. Try signing in again.' };
-      const data = await res.json();
-      const { session: currentSession } = get();
-      set(state => ({
-        profile: data.profile
-          ? {
-              ...(state.profile ?? data.profile),
-              ...data.profile,
-              display_ball: state.displayBallSync.inFlight
-                ? (state.displayBallSync.pendingBallId ?? state.profile?.display_ball ?? data.profile.display_ball)
-                : data.profile.display_ball,
-            }
-          : state.profile,
-        stats: data.stats ?? null,
-      }));
-      // Write cache so profile/stats appear instantly on next load
-      if (currentSession) {
-        const { profile: updatedProfile, stats: updatedStats } = get();
-        writeUserCache(currentSession.user.id, updatedProfile, updatedStats);
-      }
-      return { error: null };
-    } catch {
-      return { error: "Couldn't load your Trainer data. Try again." };
+    const sessionToken = session.access_token;
+    if (fetchMeInFlight && fetchMeInFlight.token === sessionToken) {
+      return fetchMeInFlight.promise;
     }
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const request = (async () => {
+      try {
+        const res = await fetch(`${supabaseUrl}/functions/v1/get-me`, {
+          headers: { 'Authorization': `Bearer ${sessionToken}` },
+        });
+        if (res.status === 401) return { error: "You're not signed in, Trainer." };
+        if (res.status === 404) return { error: 'Trainer profile not found. Try signing in again.' };
+        const data = await res.json();
+        const { session: currentSession } = get();
+        if (!currentSession || currentSession.access_token !== sessionToken) {
+          return { error: null };
+        }
+        set(state => ({
+          profile: data.profile
+            ? {
+                ...(state.profile ?? data.profile),
+                ...data.profile,
+                display_ball: state.displayBallSync.inFlight
+                  ? (state.displayBallSync.pendingBallId ?? state.profile?.display_ball ?? data.profile.display_ball)
+                  : data.profile.display_ball,
+              }
+            : state.profile,
+          stats: data.stats ?? null,
+        }));
+        // Write cache so profile/stats appear instantly on next load
+        const { profile: updatedProfile, stats: updatedStats, session: latestSession } = get();
+        if (latestSession && latestSession.access_token === sessionToken) {
+          writeUserCache(latestSession.user.id, updatedProfile, updatedStats);
+        }
+        return { error: null };
+      } catch {
+        return { error: "Couldn't load your Trainer data. Try again." };
+      } finally {
+        if (fetchMeInFlight?.token === sessionToken) {
+          fetchMeInFlight = null;
+        }
+      }
+    })();
+
+    fetchMeInFlight = { token: sessionToken, promise: request };
+    return request;
   },
 
   updateDisplayBall: async (ballId) => {
