@@ -142,10 +142,9 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     // Validate email against disposable blocklist first
     try {
       const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL) as string;
-      const anonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) as string;
       const validateRes = await fetch(`${supabaseUrl}/functions/v1/validate-email`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${anonKey}`, 'apikey': anonKey },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
       if (!validateRes.ok) {
