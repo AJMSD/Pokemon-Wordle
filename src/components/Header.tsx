@@ -1,6 +1,8 @@
 import React from 'react'
-import { Archive, User, LogIn, LogOut } from 'lucide-react'
+import { Archive, LogIn, LogOut } from 'lucide-react'
 import { useAuthStore, BALL_NAMES } from '../store/authStore'
+import { getAvatarUrl } from '../utils/avatarUtils'
+import DefaultAvatar from './DefaultAvatar'
 
 interface HeaderProps {
   onShowCollection?: () => void
@@ -20,6 +22,7 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
 
   const displayBall = (!isGuest && profile?.display_ball) ? profile.display_ball : 'poke-ball'
   const ballName = BALL_NAMES[displayBall] ?? 'Poké Ball'
+  const avatarUrl = (!isGuest && profile?.avatar_config) ? getAvatarUrl(profile.avatar_config) : null
 
   const handleSignOut = onSignOut ?? signOut
 
@@ -79,10 +82,24 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
           <div className="relative group">
             <button
               onClick={onShowProfile}
-              className="p-1.5 text-gray-600 hover:text-pokemon-red transition-colors rounded-lg hover:bg-gray-100"
+              className="p-0.5 transition-colors rounded-full hover:bg-gray-100"
               aria-label="Profile"
             >
-              <User size={18} />
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt="Trainer avatar"
+                  className="w-8 h-8 rounded-full object-cover border border-gray-200 bg-white"
+                  loading="lazy"
+                  decoding="async"
+                  width={32}
+                  height={32}
+                />
+              ) : (
+                <span className="w-8 h-8 rounded-full overflow-hidden border border-gray-200 inline-flex">
+                  <DefaultAvatar size={32} />
+                </span>
+              )}
             </button>
             <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-0.5 bg-gray-800 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10">
               Profile
