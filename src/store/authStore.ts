@@ -70,6 +70,50 @@ interface AuthActions {
 }
 
 let fetchMeInFlight: { token: string; promise: Promise<{ error: string | null }> } | null = null;
+const RECOVERY_PENDING_USER_KEY = 'wurmple_recovery_pending_user_id';
+
+function readRecoveryPendingUserId() {
+  if (typeof window === 'undefined') return null;
+  try {
+    return localStorage.getItem(RECOVERY_PENDING_USER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function markRecoveryRequiredForUser(userId: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(RECOVERY_PENDING_USER_KEY, userId);
+  } catch {
+    // Ignore storage write failures (quota/private mode)
+  }
+}
+
+function clearRecoveryRequirement() {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(RECOVERY_PENDING_USER_KEY);
+  } catch {
+    // Ignore storage write failures (quota/private mode)
+  }
+}
+
+function isRecoveryRequiredForUser(userId: string) {
+  return readRecoveryPendingUserId() === userId;
+}
+
+async function resetToFreshGuestGameState(logLabel: string) {
+  const gameStore = useGameStore.getState();
+  gameStore.invalidateServerSessionSync();
+  localStorage.removeItem('gameState');
+  localStorage.removeItem('lastPlayedDate');
+  try {
+    await gameStore.initializeGame();
+  } catch (err) {
+    console.error(logLabel, err);
+  }
+}
 
 function getRecoveryContextFromUrl() {
   if (typeof window === 'undefined') return { isRecovery: false, hasAuthToken: false };
@@ -142,6 +186,11 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     set({ isLoading: true });
 
     const applySession = async (session: Session, forcePasswordRecovery: boolean) => {
+      if (forcePasswordRecovery) {
+        markRecoveryRequiredForUser(session.user.id);
+      }
+      const persistentlyRequired = isRecoveryRequiredForUser(session.user.id);
+
       // Apply cached profile/stats immediately for instant display
       try {
         const cached = localStorage.getItem('wurmple_user_cache');
@@ -166,7 +215,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         isGuest: false,
         isLoading: false,
         pendingEmail: null,
-        pendingPasswordRecovery: forcePasswordRecovery || state.pendingPasswordRecovery,
+        pendingPasswordRecovery: forcePasswordRecovery || persistentlyRequired || state.pendingPasswordRecovery,
       }));
       void get().fetchMe();
     };
@@ -190,6 +239,8 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
             pendingEmail: null,
             pendingPasswordRecovery: false,
           });
+          localStorage.removeItem('wurmple_user_cache');
+          await resetToFreshGuestGameState('Guest game init after auth session loss failed:');
         }
       });
 
@@ -280,16 +331,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       pendingPasswordRecovery: false,
     });
     localStorage.removeItem('wurmple_user_cache');
-
-    const gameStore = useGameStore.getState();
-    gameStore.invalidateServerSessionSync();
-    gameStore.resetGame();
-
-    try {
-      await gameStore.initializeGame();
-    } catch (err) {
-      console.error('Guest game init after sign-out failed:', err);
-    }
+    await resetToFreshGuestGameState('Guest game init after sign-out failed:');
 
     try {
       await supabase.auth.signOut({ scope: 'local' });
@@ -308,6 +350,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   confirmPasswordReset: async (password) => {
     const { error } = await supabase.auth.updateUser({ password });
     if (!error) {
+      clearRecoveryRequirement();
       clearRecoveryUrlParams();
     }
     return { error: error?.message ?? null };
@@ -528,7 +571,10 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     }
   },
 
-  clearPasswordRecovery: () => set({ pendingPasswordRecovery: false }),
+  clearPasswordRecovery: () => {
+    clearRecoveryRequirement();
+    set({ pendingPasswordRecovery: false });
+  },
 }));
 
 export { useAuthStore };
