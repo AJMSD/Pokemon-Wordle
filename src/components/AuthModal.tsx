@@ -28,6 +28,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [resendCooldown, setResendCooldown] = useState(0)
 
   const signIn = useAuthStore(state => state.signIn)
   const signUp = useAuthStore(state => state.signUp)
@@ -59,6 +60,12 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [isOpen, forceView, onClose])
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return
+    const t = setTimeout(() => setResendCooldown(c => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [resendCooldown])
 
   if (!isOpen) return null
 
@@ -128,7 +135,10 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
     setIsLoading(true)
     const { error } = await resendVerification()
     setIsLoading(false)
-    if (error) { setError(error) } else { setSuccess('Verification email resent!') }
+    if (error) { setError(error) } else {
+      setSuccess('Verification email resent!')
+      setResendCooldown(60)
+    }
   }
 
   const inputCls = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-400/40 focus:border-red-500 transition-colors'
@@ -222,8 +232,12 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
           </div>
           {error && <p className="text-red-600 text-xs">{error}</p>}
           {success && <p className="text-green-600 text-xs">{success}</p>}
-          <button onClick={handleResend} disabled={isLoading} className="text-pokemon-red hover:underline text-sm font-medium disabled:opacity-50">
-            {isLoading ? 'Resending…' : 'Resend Verification'}
+          <button
+            onClick={handleResend}
+            disabled={isLoading || resendCooldown > 0}
+            className="text-pokemon-red hover:underline text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isLoading ? 'Resending…' : resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend Verification'}
           </button>
           <div><button onClick={onClose} className="text-xs text-gray-400 hover:text-gray-600">Continue as Guest</button></div>
         </div>
