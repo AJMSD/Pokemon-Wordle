@@ -122,10 +122,23 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    await supabaseAdmin
+    const { data: updatedProfile, error: updateError } = await supabaseAdmin
       .from('profiles')
+      .select('id')
       .update({ display_ball: ball_id })
-      .eq('user_id', userId);
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    if (!updatedProfile) {
+      return new Response(JSON.stringify({ error: 'Profile not found' }), {
+        status: 404,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     console.log(JSON.stringify({ fn: 'set-display-ball', method: req.method, user_id: userId, status: 200, duration_ms: Date.now() - start }));
 
