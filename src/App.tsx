@@ -10,6 +10,14 @@ import OfflineBanner from './components/OfflineBanner'
 import useToast from './hooks/useToast'
 import { ToastProps } from './components/Toast'
 
+const TIER_ORDER = ['poke-ball', 'great-ball', 'ultra-ball', 'master-ball']
+function getStreakTier(streak: number): string {
+  if (streak >= 14) return 'master-ball'
+  if (streak >= 7) return 'ultra-ball'
+  if (streak >= 3) return 'great-ball'
+  return 'poke-ball'
+}
+
 const CollectionPage = lazy(() => import('./components/CollectionPage'))
 const ProfilePage = lazy(() => import('./components/ProfilePage'))
 const AuthModal = lazy(() => import('./components/AuthModal'))
@@ -36,6 +44,7 @@ function App() {
   const initialize = useAuthStore(state => state.initialize)
   const updateDisplayBall = useAuthStore(state => state.updateDisplayBall)
   const resendVerification = useAuthStore(state => state.resendVerification)
+  const signOut = useAuthStore(state => state.signOut)
   const isGuest = useAuthStore(state => state.isGuest)
   const session = useAuthStore(state => state.session)
   const profile = useAuthStore(state => state.profile)
@@ -93,6 +102,21 @@ function App() {
     onClose: toast.onClose || (() => removeToast(toast.id))
   })) as (ToastProps & { id: string })[]
 
+  useEffect(() => {
+    if (isGuest || !stats || !profile) return
+    const currentTier = getStreakTier(stats.current_streak)
+    if (TIER_ORDER.indexOf(currentTier) > TIER_ORDER.indexOf(profile.display_ball ?? 'poke-ball')) {
+      const dismissed = localStorage.getItem('tier_prompt_dismissed')
+      if (dismissed !== currentTier) setTierUpgrade({ tierId: currentTier, tierName: BALL_NAMES[currentTier] })
+    }
+  }, [stats, profile, isGuest])
+
+  const handleSignOut = async () => {
+    await signOut()
+    setShowCollection(false)
+    setShowProfile(false)
+  }
+
   const handleResendVerification = async () => {
     await resendVerification()
   }
@@ -101,10 +125,11 @@ function App() {
     <div className="mx-auto max-w-6xl px-4 py-6 bg-white/50 backdrop-blur-sm rounded-lg shadow-lg my-4">
       <OfflineBanner />
       <Header
-        onShowCollection={!isGuest ? () => setShowCollection(true) : undefined}
-        onShowProfile={!isGuest ? () => setShowProfile(true) : undefined}
+        onShowCollection={!isGuest ? () => { setShowCollection(true); setShowProfile(false) } : undefined}
+        onShowProfile={!isGuest ? () => { setShowProfile(true); setShowCollection(false) } : undefined}
         onShowAuth={() => { setAuthInitialView('login'); setShowAuth(true) }}
         onGoHome={() => { setShowCollection(false); setShowProfile(false) }}
+        onSignOut={handleSignOut}
       />
       {showUnverifiedBanner && (
         <div className="flex items-center justify-between bg-yellow-50 border border-yellow-300 text-yellow-800 text-sm rounded-lg px-4 py-3 mb-4 gap-4">

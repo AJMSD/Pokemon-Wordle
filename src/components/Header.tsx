@@ -1,4 +1,5 @@
 import React from 'react'
+import { Archive, User, LogIn, LogOut } from 'lucide-react'
 import { useAuthStore, BALL_NAMES } from '../store/authStore'
 
 interface HeaderProps {
@@ -6,11 +7,12 @@ interface HeaderProps {
   onShowProfile?: () => void
   onShowAuth?: () => void
   onGoHome?: () => void
+  onSignOut?: () => void
 }
 
 const SPRITE_BASE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items'
 
-const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShowAuth, onGoHome }) => {
+const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShowAuth, onGoHome, onSignOut }) => {
   const profile = useAuthStore(state => state.profile)
   const stats = useAuthStore(state => state.stats)
   const isGuest = useAuthStore(state => state.isGuest)
@@ -18,6 +20,8 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
 
   const displayBall = (!isGuest && profile?.display_ball) ? profile.display_ball : 'poke-ball'
   const ballName = BALL_NAMES[displayBall] ?? 'Poké Ball'
+
+  const handleSignOut = onSignOut ?? signOut
 
   return (
     <header className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-gray-200 bg-white/80 backdrop-blur-sm sticky top-0 z-20 rounded-t-lg mb-6">
@@ -32,63 +36,85 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
           alt="Wurmple logo"
           className="h-7 w-auto object-contain flex-shrink-0"
         />
-        <h1 className="font-pixel text-lg sm:text-xl md:text-2xl text-pokemon-red tracking-wide leading-none">Wurmple</h1>
+        <h1 className="hidden sm:block font-pixel text-lg sm:text-xl md:text-2xl text-pokemon-red tracking-wide leading-none">Wurmple</h1>
       </button>
 
       {/* Right: ball badge + nav + auth */}
       <div className="flex items-center gap-2 sm:gap-3">
         {/* Ball badge pill */}
-        <div className="flex items-center gap-1 bg-gray-100 border border-gray-200 rounded-full px-2 py-0.5">
+        <div className="flex items-center gap-1.5 bg-gray-100 border border-gray-200 rounded-full px-2.5 py-1">
           <img
             src={`${SPRITE_BASE}/${displayBall}.png`}
             alt={ballName}
-            className="w-4 h-4 object-contain"
+            className="w-6 h-6 object-contain"
             loading="lazy"
             decoding="async"
-            width={16}
-            height={16}
+            width={24}
+            height={24}
           />
-          <span className="font-pixel text-xs font-medium text-gray-600 hidden sm:inline">
-            {isGuest ? 'Guest' : (profile?.username ?? 'Trainer')}
-          </span>
           {!isGuest && stats !== null && (
-            <span className="font-pixel text-xs text-gray-400 ml-0.5">🔥{stats.current_streak}</span>
+            <span className="font-pixel text-sm text-gray-600">🔥{stats.current_streak}</span>
+          )}
+          {isGuest && (
+            <span className="font-pixel text-sm font-medium text-gray-600">Guest</span>
           )}
         </div>
 
-        {/* Nav links (auth users only) */}
+        {/* Nav icons (auth users only) */}
         {!isGuest && onShowCollection && (
-          <button
-            onClick={onShowCollection}
-            className="text-sm font-semibold text-gray-700 hover:text-pokemon-red transition-colors hidden sm:block"
-          >
-            Collection
-          </button>
+          <div className="relative group">
+            <button
+              onClick={onShowCollection}
+              className="p-1.5 text-gray-600 hover:text-pokemon-red transition-colors rounded-lg hover:bg-gray-100"
+              aria-label="Collection"
+            >
+              <Archive size={18} />
+            </button>
+            <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-0.5 bg-gray-800 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10">
+              Collection
+            </span>
+          </div>
         )}
         {!isGuest && onShowProfile && (
-          <button
-            onClick={onShowProfile}
-            className="text-sm font-semibold text-gray-700 hover:text-pokemon-red transition-colors hidden sm:block"
-          >
-            Profile
-          </button>
+          <div className="relative group">
+            <button
+              onClick={onShowProfile}
+              className="p-1.5 text-gray-600 hover:text-pokemon-red transition-colors rounded-lg hover:bg-gray-100"
+              aria-label="Profile"
+            >
+              <User size={18} />
+            </button>
+            <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-0.5 bg-gray-800 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10">
+              Profile
+            </span>
+          </div>
         )}
 
         {/* Auth action */}
         {isGuest ? (
-          <button
-            onClick={onShowAuth}
-            className="bg-pokemon-red text-white px-3 sm:px-4 py-1.5 rounded-full text-sm font-semibold hover:bg-red-700 transition-colors"
-          >
-            Sign In →
-          </button>
+          <div className="relative group">
+            <button
+              onClick={onShowAuth}
+              className="bg-pokemon-red text-white px-3 py-1.5 rounded-full hover:bg-red-700 transition-colors flex items-center gap-1.5"
+              aria-label="Sign In"
+            >
+              <LogIn size={16} />
+              <span className="text-sm font-semibold hidden sm:inline">Sign In</span>
+            </button>
+          </div>
         ) : (
-          <button
-            onClick={signOut}
-            className="text-sm font-semibold text-gray-500 hover:text-gray-700 transition-colors"
-          >
-            Sign Out
-          </button>
+          <div className="relative group">
+            <button
+              onClick={handleSignOut}
+              className="p-1.5 text-gray-500 hover:text-gray-700 transition-colors rounded-lg hover:bg-gray-100"
+              aria-label="Sign Out"
+            >
+              <LogOut size={18} />
+            </button>
+            <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-0.5 bg-gray-800 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10">
+              Sign Out
+            </span>
+          </div>
         )}
       </div>
     </header>

@@ -10,16 +10,8 @@ interface ProfilePageProps {
 }
 
 const SPRITE_BASE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items'
-const TIER_ORDER = ['poke-ball', 'great-ball', 'ultra-ball', 'master-ball']
 
-function getStreakTier(streak: number): string {
-  if (streak >= 14) return 'master-ball'
-  if (streak >= 7) return 'ultra-ball'
-  if (streak >= 3) return 'great-ball'
-  return 'poke-ball'
-}
-
-const ProfilePage: React.FC<ProfilePageProps> = ({ onBack, onTierUpgradeAvailable }) => {
+const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
   const profile = useAuthStore(state => state.profile)
   const stats = useAuthStore(state => state.stats)
   const isGuest = useAuthStore(state => state.isGuest)
@@ -37,17 +29,6 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack, onTierUpgradeAvailabl
       setLoading(false)
     })
   }, [isGuest])
-
-  useEffect(() => {
-    if (isGuest || !stats || !profile) return
-    const currentTier = getStreakTier(stats.current_streak)
-    if (TIER_ORDER.indexOf(currentTier) > TIER_ORDER.indexOf(profile.display_ball)) {
-      const dismissed = localStorage.getItem('tier_prompt_dismissed')
-      if (dismissed !== currentTier) {
-        onTierUpgradeAvailable?.(currentTier, BALL_NAMES[currentTier])
-      }
-    }
-  }, [stats, profile, isGuest])
 
   const avatarUrl = profile?.avatar_config ? getAvatarUrl(profile.avatar_config) : null
   const displayBall = profile?.display_ball ?? 'poke-ball'

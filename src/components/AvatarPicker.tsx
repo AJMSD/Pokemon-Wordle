@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAuthStore } from '../store/authStore'
 
 interface AvatarPickerProps {
@@ -6,12 +6,42 @@ interface AvatarPickerProps {
 }
 
 const SPRITE_BASE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon'
+const CACHE_KEY = 'wurmple_avatar_pokemon_list'
+
+interface PokemonEntry {
+  id: number
+  name: string
+}
 
 const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
   const [selected, setSelected] = useState<number | null>(null)
   const [isShiny, setIsShiny] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [search, setSearch] = useState('')
+  const [pokemonMap, setPokemonMap] = useState<PokemonEntry[]>(() => {
+    // Seed with first 50 as fallback while fetching
+    return Array.from({ length: 50 }, (_, i) => ({ id: i + 1, name: `#${i + 1}` }))
+  })
   const updateAvatar = useAuthStore(state => state.updateAvatar)
+
+  useEffect(() => {
+    const cached = localStorage.getItem(CACHE_KEY)
+    if (cached) {
+      try { setPokemonMap(JSON.parse(cached)); return } catch { /* fall through to fetch */ }
+    }
+    fetch('https://pokeapi.co/api/v2/pokemon?limit=1025')
+      .then(r => r.json())
+      .then(data => {
+        const list: PokemonEntry[] = data.results.map((p: { name: string }, i: number) => ({ id: i + 1, name: p.name }))
+        setPokemonMap(list)
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify(list)) } catch { /* ignore quota */ }
+      })
+      .catch(() => { /* keep fallback */ })
+  }, [])
+
+  const filtered = search.trim()
+    ? pokemonMap.filter(p => p.name.includes(search.toLowerCase().trim()))
+    : pokemonMap
 
   const spriteUrl = (id: number) =>
     isShiny ? `${SPRITE_BASE}/shiny/${id}.png` : `${SPRITE_BASE}/${id}.png`
@@ -29,8 +59,15 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
         <h2 className="text-xl font-bold text-center text-gray-900 mb-4">Choose your trainer</h2>
 
-        <div className="flex items-center justify-center gap-2 mb-4">
-          <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer select-none">
+        <div className="flex items-center gap-3 mb-3">
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search Pokémon..."
+            className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-pokemon-red/40"
+          />
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer select-none whitespace-nowrap">
             <input
               type="checkbox"
               checked={isShiny}
@@ -41,24 +78,27 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
           </label>
         </div>
 
-        <div className="grid grid-cols-5 gap-2 mb-6">
-          {Array.from({ length: 20 }, (_, i) => i + 1).map(id => (
+        <div className="grid grid-cols-5 gap-2 mb-6 max-h-64 overflow-y-auto pr-1">
+          {filtered.length === 0 ? (
+            <p className="col-span-5 text-center text-sm text-gray-400 py-4">No Pokémon found</p>
+          ) : filtered.map(p => (
             <button
-              key={id}
-              onClick={() => setSelected(id)}
-              className={`rounded-lg border-2 p-1 transition-colors ${
-                selected === id
+              key={p.id}
+              onClick={() => setSelected(p.id)}
+              className={`rounded-lg border-2 p-1 transition-colors flex flex-col items-center ${
+                selected === p.id
                   ? 'border-pokemon-red bg-red-50'
                   : 'border-gray-200 hover:border-gray-400'
               }`}
-              title={`Pokémon #${id}`}
+              title={p.name}
             >
               <img
-                src={spriteUrl(id)}
-                alt={`Pokémon #${id}`}
+                src={spriteUrl(p.id)}
+                alt={p.name}
                 className="w-full h-auto"
                 loading="lazy"
               />
+              <span className="text-[9px] text-gray-500 truncate w-full text-center leading-tight mt-0.5">{p.name}</span>
             </button>
           ))}
         </div>

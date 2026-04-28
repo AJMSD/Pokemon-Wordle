@@ -81,6 +81,17 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       const { data: { session } } = await supabase.auth.getSession();
 
       if (session) {
+        // Apply cached profile/stats immediately for instant display
+        try {
+          const cached = localStorage.getItem('wurmple_user_cache');
+          if (cached) {
+            const cachedData = JSON.parse(cached);
+            if (cachedData.userId === session.user.id) {
+              set({ profile: cachedData.profile ?? null, stats: cachedData.stats ?? null });
+            }
+          }
+        } catch { /* ignore malformed cache */ }
+
         const { data: profile } = await supabase
           .from('profiles')
           .select('*')
@@ -131,9 +142,10 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     // Validate email against disposable blocklist first
     try {
       const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL) as string;
+      const anonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) as string;
       const validateRes = await fetch(`${supabaseUrl}/functions/v1/validate-email`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${anonKey}`, 'apikey': anonKey },
         body: JSON.stringify({ email }),
       });
       if (!validateRes.ok) {
@@ -188,8 +200,10 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   },
 
   signOut: async () => {
-    await supabase.auth.signOut({ scope: 'global' });
+    await supabase.auth.signOut({ scope: 'local' });
+    localStorage.removeItem('wurmple_user_cache');
     useGameStore.getState().resetGame();
+    await useGameStore.getState().initializeGame();
     set({ user: null, session: null, profile: null, stats: null, isGuest: true, pendingEmail: null });
   },
 
@@ -275,12 +289,24 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       if (res.status === 401) return { error: "You're not signed in, Trainer." };
       if (res.status === 404) return { error: 'Trainer profile not found. Try signing in again.' };
       const data = await res.json();
+      const { session: currentSession } = get();
       set(state => ({
         profile: state.profile && data.profile
           ? { ...state.profile, ...data.profile }
           : state.profile,
         stats: data.stats ?? null,
       }));
+      // Write cache so profile/stats appear instantly on next load
+      if (currentSession) {
+        try {
+          const { profile: updatedProfile, stats: updatedStats } = get();
+          localStorage.setItem('wurmple_user_cache', JSON.stringify({
+            userId: currentSession.user.id,
+            profile: updatedProfile,
+            stats: updatedStats,
+          }));
+        } catch { /* ignore quota errors */ }
+      }
       return { error: null };
     } catch {
       return { error: "Couldn't load your Trainer data. Try again." };
@@ -290,6 +316,12 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   updateDisplayBall: async (ballId) => {
     const { session } = get();
     if (!session) return { error: "You're not signed in, Trainer." };
+
+    const prevBall = get().profile?.display_ball;
+    // Optimistic update before network call
+    set(state => ({
+      profile: state.profile ? { ...state.profile, display_ball: ballId } : null,
+    }));
 
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
     try {
@@ -302,13 +334,18 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         body: JSON.stringify({ ball_id: ballId }),
       });
       const data = await res.json();
-      if (res.ok) {
+      if (!res.ok) {
+        // Revert on failure
         set(state => ({
-          profile: state.profile ? { ...state.profile, display_ball: ballId } : null,
+          profile: state.profile ? { ...state.profile, display_ball: prevBall ?? 'poke-ball' } : null,
         }));
+        return { error: data.error ?? null };
       }
-      return { error: data.error ?? null };
+      return { error: null };
     } catch {
+      set(state => ({
+        profile: state.profile ? { ...state.profile, display_ball: prevBall ?? 'poke-ball' } : null,
+      }));
       return { error: "Couldn't update your display ball. Try again." };
     }
   },
