@@ -71,6 +71,46 @@ interface AuthActions {
 
 let fetchMeInFlight: { token: string; promise: Promise<{ error: string | null }> } | null = null;
 
+function getRecoveryContextFromUrl() {
+  if (typeof window === 'undefined') return { isRecovery: false, hasAuthToken: false };
+
+  const hash = window.location.hash.startsWith('#')
+    ? window.location.hash.slice(1)
+    : window.location.hash;
+  const hashParams = new URLSearchParams(hash);
+  const searchParams = new URLSearchParams(window.location.search);
+
+  const type = hashParams.get('type') ?? searchParams.get('type');
+  const hasAuthToken = Boolean(
+    hashParams.get('access_token')
+    || hashParams.get('refresh_token')
+    || searchParams.get('access_token')
+    || searchParams.get('refresh_token'),
+  );
+
+  return {
+    isRecovery: type === 'recovery',
+    hasAuthToken,
+  };
+}
+
+function clearRecoveryUrlParams() {
+  if (typeof window === 'undefined') return;
+
+  const url = new URL(window.location.href);
+  const searchKeys = ['type', 'access_token', 'refresh_token', 'expires_in', 'token_type', 'recovery'];
+  searchKeys.forEach(key => url.searchParams.delete(key));
+
+  const hash = window.location.hash.startsWith('#')
+    ? window.location.hash.slice(1)
+    : window.location.hash;
+  const hashParams = new URLSearchParams(hash);
+  searchKeys.forEach(key => hashParams.delete(key));
+  url.hash = hashParams.toString();
+
+  window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
+}
+
 function writeUserCache(userId: string, profile: Profile | null, stats: Stats | null) {
   try {
     localStorage.setItem('wurmple_user_cache', JSON.stringify({
@@ -101,35 +141,64 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   initialize: async () => {
     set({ isLoading: true });
 
+    const applySession = async (session: Session, forcePasswordRecovery: boolean) => {
+      // Apply cached profile/stats immediately for instant display
+      try {
+        const cached = localStorage.getItem('wurmple_user_cache');
+        if (cached) {
+          const cachedData = JSON.parse(cached);
+          if (cachedData.userId === session.user.id) {
+            set({ profile: cachedData.profile ?? null, stats: cachedData.stats ?? null });
+          }
+        }
+      } catch { /* ignore malformed cache */ }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .maybeSingle();
+
+      set(state => ({
+        user: session.user,
+        session,
+        profile: profile ?? null,
+        isGuest: false,
+        isLoading: false,
+        pendingEmail: null,
+        pendingPasswordRecovery: forcePasswordRecovery || state.pendingPasswordRecovery,
+      }));
+      void get().fetchMe();
+    };
+
     try {
+      supabase.auth.onAuthStateChange(async (event, session) => {
+        const recoveryFromUrl = getRecoveryContextFromUrl();
+        const recoveryFromEvent = event === 'PASSWORD_RECOVERY';
+        const forcePasswordRecovery = recoveryFromEvent || (recoveryFromUrl.isRecovery && recoveryFromUrl.hasAuthToken);
+
+        if (session) {
+          await applySession(session, forcePasswordRecovery);
+        } else {
+          set({
+            user: null,
+            session: null,
+            profile: null,
+            stats: null,
+            displayBallSync: { inFlight: false, pendingBallId: null, requestId: 0 },
+            isGuest: true,
+            pendingEmail: null,
+            pendingPasswordRecovery: false,
+          });
+        }
+      });
+
+      const recoveryFromUrl = getRecoveryContextFromUrl();
       const { data: { session } } = await supabase.auth.getSession();
+      const forcePasswordRecovery = recoveryFromUrl.isRecovery && recoveryFromUrl.hasAuthToken;
 
       if (session) {
-        // Apply cached profile/stats immediately for instant display
-        try {
-          const cached = localStorage.getItem('wurmple_user_cache');
-          if (cached) {
-            const cachedData = JSON.parse(cached);
-            if (cachedData.userId === session.user.id) {
-              set({ profile: cachedData.profile ?? null, stats: cachedData.stats ?? null });
-            }
-          }
-        } catch { /* ignore malformed cache */ }
-
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .maybeSingle();
-
-        set({
-          user: session.user,
-          session,
-          profile: profile ?? null,
-          isGuest: false,
-          isLoading: false,
-        });
-        void get().fetchMe();
+        await applySession(session, forcePasswordRecovery);
       } else {
         set({ isLoading: false });
       }
@@ -137,39 +206,6 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       console.error('Auth init failed:', err);
       set({ isLoading: false });
     }
-
-    supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        set({ pendingPasswordRecovery: true });
-        return;
-      }
-      if (session) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .maybeSingle();
-
-        set({
-          user: session.user,
-          session,
-          profile: profile ?? null,
-          isGuest: false,
-          pendingEmail: null,
-        });
-        void get().fetchMe();
-      } else {
-        set({
-          user: null,
-          session: null,
-          profile: null,
-          stats: null,
-          displayBallSync: { inFlight: false, pendingBallId: null, requestId: 0 },
-          isGuest: true,
-          pendingEmail: null,
-        });
-      }
-    });
   },
 
   signUp: async (email, password, username) => {
@@ -241,6 +277,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       displayBallSync: { inFlight: false, pendingBallId: null, requestId: 0 },
       isGuest: true,
       pendingEmail: null,
+      pendingPasswordRecovery: false,
     });
     localStorage.removeItem('wurmple_user_cache');
 
@@ -270,6 +307,9 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
 
   confirmPasswordReset: async (password) => {
     const { error } = await supabase.auth.updateUser({ password });
+    if (!error) {
+      clearRecoveryUrlParams();
+    }
     return { error: error?.message ?? null };
   },
 
