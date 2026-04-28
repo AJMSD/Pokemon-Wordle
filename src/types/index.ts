@@ -68,6 +68,7 @@ export interface GameActions {
   checkForNewDay: () => void;
   initializeServerSession: (accessToken: string) => Promise<void>;
   submitGuessToServer: (guess: string, accessToken: string) => Promise<boolean>;
+  invalidateServerSessionSync: () => void;
   clearRateLimitLock: () => void;
   clearStaleLock: () => void;
   clearNewlyUnlockedBalls: () => void;

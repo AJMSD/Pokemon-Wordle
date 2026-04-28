@@ -12,7 +12,7 @@ const PokedexUI: React.FC = () => {
     makeGuess, submitGuessToServer, error, resetError,
     dailyPokemon, gameStatus, checkForNewDay,
     isSubmitting, staleLock, rateLimitUntil, rejectedGuess,
-    clearStaleLock, clearRejectedGuess,
+    clearStaleLock, clearRejectedGuess, clearRateLimitLock,
   } = useGameStore()
   const session = useAuthStore(state => state.session)
   const isGuest = useAuthStore(state => state.isGuest)
@@ -48,6 +48,19 @@ const PokedexUI: React.FC = () => {
   useEffect(() => {
     checkForNewDay();
   }, [checkForNewDay]);
+
+  // On sign-out, clear local input/locks so stale authenticated UI cannot linger
+  useEffect(() => {
+    if (!isGuest) return
+    setCurrentGuess('')
+    setShowSuggestions(false)
+    setSelectedIndex(-1)
+    setJustSelected(false)
+    setInputShaking(false)
+    clearStaleLock()
+    clearRejectedGuess()
+    clearRateLimitLock()
+  }, [isGuest, clearStaleLock, clearRejectedGuess, clearRateLimitLock])
 
   // Rate-limit countdown
   useEffect(() => {

@@ -199,11 +199,24 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   },
 
   signOut: async () => {
-    await supabase.auth.signOut({ scope: 'local' });
-    localStorage.removeItem('wurmple_user_cache');
-    useGameStore.getState().resetGame();
-    await useGameStore.getState().initializeGame();
     set({ user: null, session: null, profile: null, stats: null, isGuest: true, pendingEmail: null });
+    localStorage.removeItem('wurmple_user_cache');
+
+    const gameStore = useGameStore.getState();
+    gameStore.invalidateServerSessionSync();
+    gameStore.resetGame();
+
+    try {
+      await gameStore.initializeGame();
+    } catch (err) {
+      console.error('Guest game init after sign-out failed:', err);
+    }
+
+    try {
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch (err) {
+      console.warn('Supabase sign-out failed (local state already cleared):', err);
+    }
   },
 
   sendPasswordReset: async (email) => {

@@ -2,8 +2,10 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './tests/e2e',
-  baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173',
   timeout: 30000,
+  use: {
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173',
+  },
   projects: [
     {
       name: 'desktop',

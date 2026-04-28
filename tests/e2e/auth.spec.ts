@@ -37,4 +37,23 @@ test.describe('Auth flows', () => {
     // Assert success message
     await expect(page.getByText(/reset.*sent|check your email/i)).toBeVisible({ timeout: 10000 })
   })
+
+  test('sign out immediately returns guest header state', async ({ page }) => {
+    const email = process.env.E2E_AUTH_EMAIL
+    const password = process.env.E2E_AUTH_PASSWORD
+    test.skip(!email || !password, 'Set E2E_AUTH_EMAIL and E2E_AUTH_PASSWORD to run authenticated sign-out regression')
+
+    await page.goto('/')
+    await page.getByRole('button', { name: /sign in/i }).click()
+    await page.getByLabel(/email/i).fill(email!)
+    await page.getByLabel(/password/i).fill(password!)
+    await page.locator('button[type="submit"]').filter({ hasText: 'Sign In' }).click()
+
+    const signOutButton = page.getByRole('button', { name: /sign out/i })
+    await expect(signOutButton).toBeVisible({ timeout: 10000 })
+    await signOutButton.click()
+
+    await expect(page.getByRole('button', { name: /^sign in$/i })).toBeVisible({ timeout: 2000 })
+    await expect(page.getByRole('button', { name: /sign out/i })).toBeHidden()
+  })
 })

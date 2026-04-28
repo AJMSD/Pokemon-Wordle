@@ -22,6 +22,8 @@ function mapServerHints(
   ];
 }
 
+let serverSyncEpoch = 0;
+
 const useGameStore = create<GameState & GameActions>((set, get) => ({
   dailyPokemon: null,
   pokemonList: [],
@@ -299,11 +301,13 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
   },
 
   initializeServerSession: async (accessToken) => {
+    const requestEpoch = serverSyncEpoch;
     const base = import.meta.env.VITE_SUPABASE_URL as string;
     try {
       const puzzleRes = await fetch(`${base}/functions/v1/get-daily-puzzle`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
+      if (requestEpoch !== serverSyncEpoch) return;
       if (!puzzleRes.ok) return;
       const { puzzle_date_key } = await puzzleRes.json();
 
@@ -311,8 +315,10 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
         `${base}/functions/v1/get-session?puzzle_date_key=${puzzle_date_key}`,
         { headers: { Authorization: `Bearer ${accessToken}` } }
       );
+      if (requestEpoch !== serverSyncEpoch) return;
       if (!sessRes.ok) return;
       const s = await sessRes.json();
+      if (requestEpoch !== serverSyncEpoch) return;
 
       const newStatus: GameState['gameStatus'] =
         s.completion_state === 'won' ? 'won' :
@@ -329,6 +335,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
           : state.dailyPokemon,
       }));
 
+      if (requestEpoch !== serverSyncEpoch) return;
       localStorage.setItem('gameState', JSON.stringify({
         ...get(), isLoading: false, isSubmitting: false, error: null,
       }));
@@ -338,6 +345,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
   },
 
   submitGuessToServer: async (guess, accessToken) => {
+    const requestEpoch = serverSyncEpoch;
     const { dailyPokemon, guesses, pokemonList, gameStatus, sessionVersion, puzzleDateKey } = get();
     const base = import.meta.env.VITE_SUPABASE_URL as string;
 
@@ -368,8 +376,10 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
         }),
       });
 
+      if (requestEpoch !== serverSyncEpoch) return false;
       if (resp.ok) {
         const d = await resp.json();
+        if (requestEpoch !== serverSyncEpoch) return false;
         const newStatus: GameState['gameStatus'] =
           d.completion_state === 'won' ? 'won' :
           d.completion_state === 'lost' ? 'lost' : 'playing';
@@ -387,12 +397,14 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
         });
 
         localStorage.setItem('lastPlayedDate', getJSTDateKey());
+        if (requestEpoch !== serverSyncEpoch) return false;
         localStorage.setItem('gameState', JSON.stringify({
           ...get(), isLoading: false, isSubmitting: false, error: null,
         }));
         return newStatus === 'won';
       }
 
+      if (requestEpoch !== serverSyncEpoch) return false;
       const errData = await resp.json().catch(() => ({}));
       if (resp.status === 409) {
         set({ guesses: originalGuesses, isSubmitting: false, staleLock: true, rejectedGuess: normalized });
@@ -413,9 +425,23 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       }
       return false;
     } catch {
+      if (requestEpoch !== serverSyncEpoch) return false;
       set({ guesses: originalGuesses, isSubmitting: false, error: 'Connection lost. Check your signal, Trainer!', rejectedGuess: normalized });
       return false;
     }
+  },
+
+  invalidateServerSessionSync: () => {
+    serverSyncEpoch += 1;
+    set({
+      sessionVersion: null,
+      puzzleDateKey: null,
+      isSubmitting: false,
+      staleLock: false,
+      rateLimitUntil: null,
+      newlyUnlockedBalls: [],
+      rejectedGuess: null,
+    });
   },
 
   clearRateLimitLock:      () => set({ rateLimitUntil: null }),

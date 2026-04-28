@@ -75,6 +75,12 @@ function App() {
   }, [isGuest, session?.access_token, user?.email_confirmed_at, user?.id, initializeServerSession])
 
   useEffect(() => {
+    if (isGuest) {
+      lastSyncedUserId.current = null
+    }
+  }, [isGuest])
+
+  useEffect(() => {
     if (newlyUnlockedBalls.length > 0) {
       const ballId = newlyUnlockedBalls[0]
       setUnlockedBall({ name: BALL_NAMES[ballId] ?? ballId, id: ballId })
@@ -112,9 +118,11 @@ function App() {
   }, [stats, profile, isGuest])
 
   const handleSignOut = async () => {
-    await signOut()
     setShowCollection(false)
     setShowProfile(false)
+    setShowAuth(false)
+    lastSyncedUserId.current = null
+    await signOut()
   }
 
   const handleResendVerification = async () => {
