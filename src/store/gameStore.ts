@@ -5,6 +5,7 @@ import {
   fetchPokemonDetails, 
   fetchPokemonSpecies,
   getDailyPokemonIndex,
+  getJSTDateKey,
   isCorrectGuess,
   isValidPokemonName,
   normalizePokemonName
@@ -47,7 +48,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
     set({ isLoading: true, error: null });
 
     try {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = getJSTDateKey();
       const lastPlayed = localStorage.getItem('lastPlayedDate');
 
       // Restore previous game state if it's from the same day
@@ -167,14 +168,14 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
     set({ guesses: newGuesses, error: null, gameStatus: newGameStatus });
     
     // Persist to localStorage
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getJSTDateKey();
     localStorage.setItem('lastPlayedDate', today);
     localStorage.setItem('gameState', JSON.stringify({
       ...get(),
       isLoading: false,
       error: null
     }));
-    
+
     // Reveal a hint if guess count is 3, 6, or 9
     if (newGuesses.length === 3 || newGuesses.length === 6 || newGuesses.length === 9) {
       await get().revealHint(newGuesses.length);
@@ -243,7 +244,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
     });
     
     // Update localStorage with reset state
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getJSTDateKey();
     localStorage.setItem('lastPlayedDate', today);
     localStorage.setItem('gameState', JSON.stringify({
       ...get(),
@@ -251,7 +252,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       error: null
     }));
   },
-  
+
   // Selects a new random Pokémon (primarily for testing)
   selectNewPokemon: async () => {
     set({ isLoading: true, error: null });
@@ -290,7 +291,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
   // Checks if it's a new day and resets game if needed
   checkForNewDay: () => {
     const { lastPlayedDate } = get();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getJSTDateKey();
 
     if (lastPlayedDate !== today) {
       get().initializeGame();
@@ -320,7 +321,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       set(state => ({
         guesses: s.guesses ?? state.guesses,
         hints: s.hint_flags ? mapServerHints(s.hint_flags, s.hints ?? {}) : state.hints,
-        gameStatus: newStatus,
+        gameStatus: state.gameStatus === 'playing' ? newStatus : state.gameStatus,
         sessionVersion: s.version,
         puzzleDateKey: puzzle_date_key,
         dailyPokemon: state.dailyPokemon && s.pokemon_name
@@ -385,7 +386,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
             : get().dailyPokemon,
         });
 
-        localStorage.setItem('lastPlayedDate', new Date().toISOString().slice(0, 10));
+        localStorage.setItem('lastPlayedDate', getJSTDateKey());
         localStorage.setItem('gameState', JSON.stringify({
           ...get(), isLoading: false, isSubmitting: false, error: null,
         }));

@@ -295,6 +295,8 @@ Deno.serve(async (req: Request) => {
         .eq('user_id', userId)
         .single();
 
+      let newWinsAfterLoss = 0;
+
       if (stats) {
         const gamesWon = (stats.games_won ?? 0) + (completionState === 'won' ? 1 : 0);
         const totalLosses = (stats.total_losses ?? 0) + (completionState === 'lost' ? 1 : 0);
@@ -313,7 +315,7 @@ Deno.serve(async (req: Request) => {
         );
         const maxStreak = Math.max(stats.max_streak ?? 0, currentStreak);
 
-        const newWinsAfterLoss = calcWinsAfterLoss(
+        newWinsAfterLoss = calcWinsAfterLoss(
           stats.wins_after_loss_streak ?? 0,
           completionState === 'won'
         );
@@ -327,19 +329,19 @@ Deno.serve(async (req: Request) => {
           guess_distribution: dist,
           wins_after_loss_streak: newWinsAfterLoss,
         }).eq('user_id', userId);
+      }
 
-        const completionBalls = checkBallUnlocks({
-          completionState,
-          guessCount: newGuesses.length,
-          partStreak: 0,
-          waterBugCount: 0,
-          isWaterOrBug: false,
-          winsAfterLoss: newWinsAfterLoss,
-          hasProfile: false,
-        });
-        for (const ball of completionBalls) {
-          if (await awardBall(supabaseAdmin, userId, ball)) newlyUnlocked.push(ball);
-        }
+      const completionBalls = checkBallUnlocks({
+        completionState,
+        guessCount: newGuesses.length,
+        partStreak: 0,
+        waterBugCount: 0,
+        isWaterOrBug: false,
+        winsAfterLoss: newWinsAfterLoss,
+        hasProfile: false,
+      });
+      for (const ball of completionBalls) {
+        if (await awardBall(supabaseAdmin, userId, ball)) newlyUnlocked.push(ball);
       }
     }
 

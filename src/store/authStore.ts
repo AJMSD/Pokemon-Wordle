@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
+import { useGameStore } from './gameStore';
 import type { User, Session } from '../lib/supabase';
 import type { AvatarConfig } from '../utils/avatarUtils';
 
@@ -84,7 +85,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
           .from('profiles')
           .select('*')
           .eq('id', session.user.id)
-          .single();
+          .maybeSingle();
 
         set({
           user: session.user,
@@ -111,7 +112,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
           .from('profiles')
           .select('*')
           .eq('id', session.user.id)
-          .single();
+          .maybeSingle();
 
         set({
           user: session.user,
@@ -132,7 +133,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL) as string;
       const validateRes = await fetch(`${supabaseUrl}/functions/v1/validate-email`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY },
         body: JSON.stringify({ email }),
       });
       if (!validateRes.ok) {
@@ -187,7 +188,8 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   },
 
   signOut: async () => {
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'global' });
+    useGameStore.getState().resetGame();
     set({ user: null, session: null, profile: null, stats: null, isGuest: true, pendingEmail: null });
   },
 
@@ -332,7 +334,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         .from('profiles')
         .select('*')
         .eq('id', session.user.id)
-        .single();
+        .maybeSingle();
 
       set({ profile: profile ?? null });
       return { error: null };

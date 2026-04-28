@@ -5,11 +5,12 @@ interface HeaderProps {
   onShowCollection?: () => void
   onShowProfile?: () => void
   onShowAuth?: () => void
+  onGoHome?: () => void
 }
 
 const SPRITE_BASE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items'
 
-const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShowAuth }) => {
+const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShowAuth, onGoHome }) => {
   const profile = useAuthStore(state => state.profile)
   const stats = useAuthStore(state => state.stats)
   const isGuest = useAuthStore(state => state.isGuest)
@@ -21,12 +22,18 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
   return (
     <header className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-gray-200 bg-white/80 backdrop-blur-sm sticky top-0 z-20 rounded-t-lg mb-6">
       {/* Left: Logo + title */}
-      <div className="flex items-center gap-2">
-        <svg width="26" height="26" viewBox="0 0 24 24" className="fill-pokemon-red flex-shrink-0">
-          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-5-9c.83 0 1.5-.67 1.5-1.5S7.83 8 7 8s-1.5.67-1.5 1.5S6.17 11 7 11zm10 0c.83 0 1.5-.67 1.5-1.5S17.83 8 17 8s-1.5.67-1.5 1.5.67 1.5 1.5 1.5zM12 17.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/>
-        </svg>
+      <button
+        onClick={onGoHome}
+        className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+        aria-label="Go to game"
+      >
+        <img
+          src={`${import.meta.env.BASE_URL}logo.png`}
+          alt="Wurmple logo"
+          className="h-7 w-auto object-contain flex-shrink-0"
+        />
         <h1 className="font-pixel text-lg sm:text-xl md:text-2xl text-pokemon-red tracking-wide leading-none">Wurmple</h1>
-      </div>
+      </button>
 
       {/* Right: ball badge + nav + auth */}
       <div className="flex items-center gap-2 sm:gap-3">
@@ -42,7 +49,7 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
             height={16}
           />
           <span className="font-pixel text-xs font-medium text-gray-600 hidden sm:inline">
-            {isGuest ? 'Guest' : ballName}
+            {isGuest ? 'Guest' : (profile?.username ?? 'Trainer')}
           </span>
           {!isGuest && stats !== null && (
             <span className="font-pixel text-xs text-gray-400 ml-0.5">🔥{stats.current_streak}</span>

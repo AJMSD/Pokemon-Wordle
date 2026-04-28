@@ -52,16 +52,18 @@ function App() {
   const [tierUpgrade, setTierUpgrade] = useState<{ tierId: string; tierName: string } | null>(null)
   const [bannerDismissed, setBannerDismissed] = useState(false)
   const milestoneShownRef = useRef(false)
+  const lastSyncedUserId = useRef<string | null>(null)
 
   useEffect(() => {
     initialize().then(() => initializeGame())
   }, [initialize, initializeGame])
 
   useEffect(() => {
-    if (!isGuest && session?.access_token && user?.email_confirmed_at) {
+    if (!isGuest && session?.access_token && user?.email_confirmed_at && user.id !== lastSyncedUserId.current) {
+      lastSyncedUserId.current = user.id
       initializeServerSession(session.access_token)
     }
-  }, [isGuest, session?.access_token, user?.email_confirmed_at, initializeServerSession])
+  }, [isGuest, session?.access_token, user?.email_confirmed_at, user?.id, initializeServerSession])
 
   useEffect(() => {
     if (newlyUnlockedBalls.length > 0) {
@@ -102,6 +104,7 @@ function App() {
         onShowCollection={!isGuest ? () => setShowCollection(true) : undefined}
         onShowProfile={!isGuest ? () => setShowProfile(true) : undefined}
         onShowAuth={() => { setAuthInitialView('login'); setShowAuth(true) }}
+        onGoHome={() => { setShowCollection(false); setShowProfile(false) }}
       />
       {showUnverifiedBanner && (
         <div className="flex items-center justify-between bg-yellow-50 border border-yellow-300 text-yellow-800 text-sm rounded-lg px-4 py-3 mb-4 gap-4">

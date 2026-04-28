@@ -8,9 +8,13 @@ export const normalizePokemonName = (name: string): string => {
     .replace(/-mega$|-gmax$|-alola$|-galar$|-hisui$|-paldea$|-green-plumage$|-incarnate$|-f$|-m$|-shield$|-single-strike$|-normal$|-plant$|-altered$|-land$|-red-striped$|-standard$|-ordinary$|-aria$|-male$|-average$|-50$|-baile$|-midday$|-solo$|-red-meteor$|-disguised$|-amped$|-full-belly$|-family-of-four$|-zero$|-curly$|-two-segment$|-ice$/, '');
 };
 
+export function getJSTDateKey(): string {
+  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
 // Generates a consistent Pokémon index for a given day
 export const getDailyPokemonIndex = (): number => {
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const today = getJSTDateKey();
   const seed = today + "pokemonWordle"; // Salt for randomization
   
   // Use prime numbers for better hash distribution
