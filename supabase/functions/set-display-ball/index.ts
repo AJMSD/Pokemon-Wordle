@@ -124,9 +124,9 @@ Deno.serve(async (req: Request) => {
 
     const { data: updatedProfile, error: updateError } = await supabaseAdmin
       .from('profiles')
-      .select('id')
       .update({ display_ball: ball_id })
       .eq('id', userId)
+      .select('id')
       .maybeSingle();
 
     if (updateError) {
