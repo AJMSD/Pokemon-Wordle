@@ -8,6 +8,10 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('Supabase env vars not set — authenticated features disabled');
 }
 
-export const supabase = createClient(supabaseUrl ?? '', supabaseAnonKey ?? '');
+// Avoid throwing at module import time in environments (e.g., CI tests) where env vars are absent.
+const safeSupabaseUrl = supabaseUrl || 'https://placeholder.supabase.co';
+const safeSupabaseAnonKey = supabaseAnonKey || 'placeholder-anon-key';
+
+export const supabase = createClient(safeSupabaseUrl, safeSupabaseAnonKey);
 
 export type { User, Session } from '@supabase/supabase-js';
