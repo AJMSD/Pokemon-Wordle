@@ -51,6 +51,7 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
   const [loading, setLoading] = useState(true)
   const [selectedBall, setSelectedBall] = useState<string | null>(null)
   const [settingBall, setSettingBall] = useState(false)
+  const [setBallError, setSetBallError] = useState<string | null>(null)
 
   useEffect(() => {
     if (isGuest) { setLoading(false); return }
@@ -66,7 +67,11 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
 
   async function handleSetBall(ballId: string) {
     setSettingBall(true)
-    await updateDisplayBall(ballId)
+    setSetBallError(null)
+    const { error } = await updateDisplayBall(ballId)
+    if (error) {
+      setSetBallError(error)
+    }
     setSettingBall(false)
     setSelectedBall(null)
   }
@@ -93,6 +98,11 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
 
       <h2 className="text-2xl font-bold text-gray-800 mb-1">Ball Collection</h2>
       <p className="text-sm text-gray-500 mb-6">Earn balls by playing and achieving milestones.</p>
+      {setBallError && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {setBallError}
+        </div>
+      )}
 
       {isGuest && (
         <div className="mb-6 bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-xl p-4 text-center">

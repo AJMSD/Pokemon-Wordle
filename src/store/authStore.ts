@@ -42,6 +42,11 @@ interface AuthState {
   session: Session | null;
   profile: Profile | null;
   stats: Stats | null;
+  displayBallSync: {
+    inFlight: boolean;
+    pendingBallId: string | null;
+    requestId: number;
+  };
   isLoading: boolean;
   isGuest: boolean;
   pendingPasswordRecovery: boolean;
@@ -64,11 +69,28 @@ interface AuthActions {
   clearPasswordRecovery: () => void;
 }
 
+function writeUserCache(userId: string, profile: Profile | null, stats: Stats | null) {
+  try {
+    localStorage.setItem('wurmple_user_cache', JSON.stringify({
+      userId,
+      profile,
+      stats,
+    }));
+  } catch {
+    // Ignore cache write failures (quota/private mode)
+  }
+}
+
 const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   user: null,
   session: null,
   profile: null,
   stats: null,
+  displayBallSync: {
+    inFlight: false,
+    pendingBallId: null,
+    requestId: 0,
+  },
   isLoading: true,
   isGuest: true,
   pendingPasswordRecovery: false,
@@ -133,7 +155,15 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
           pendingEmail: null,
         });
       } else {
-        set({ user: null, session: null, profile: null, stats: null, isGuest: true, pendingEmail: null });
+        set({
+          user: null,
+          session: null,
+          profile: null,
+          stats: null,
+          displayBallSync: { inFlight: false, pendingBallId: null, requestId: 0 },
+          isGuest: true,
+          pendingEmail: null,
+        });
       }
     });
   },
@@ -199,7 +229,15 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   },
 
   signOut: async () => {
-    set({ user: null, session: null, profile: null, stats: null, isGuest: true, pendingEmail: null });
+    set({
+      user: null,
+      session: null,
+      profile: null,
+      stats: null,
+      displayBallSync: { inFlight: false, pendingBallId: null, requestId: 0 },
+      isGuest: true,
+      pendingEmail: null,
+    });
     localStorage.removeItem('wurmple_user_cache');
 
     const gameStore = useGameStore.getState();
@@ -303,21 +341,21 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       const data = await res.json();
       const { session: currentSession } = get();
       set(state => ({
-        profile: state.profile && data.profile
-          ? { ...state.profile, ...data.profile }
+        profile: data.profile
+          ? {
+              ...(state.profile ?? data.profile),
+              ...data.profile,
+              display_ball: state.displayBallSync.inFlight
+                ? (state.displayBallSync.pendingBallId ?? state.profile?.display_ball ?? data.profile.display_ball)
+                : data.profile.display_ball,
+            }
           : state.profile,
         stats: data.stats ?? null,
       }));
       // Write cache so profile/stats appear instantly on next load
       if (currentSession) {
-        try {
-          const { profile: updatedProfile, stats: updatedStats } = get();
-          localStorage.setItem('wurmple_user_cache', JSON.stringify({
-            userId: currentSession.user.id,
-            profile: updatedProfile,
-            stats: updatedStats,
-          }));
-        } catch { /* ignore quota errors */ }
+        const { profile: updatedProfile, stats: updatedStats } = get();
+        writeUserCache(currentSession.user.id, updatedProfile, updatedStats);
       }
       return { error: null };
     } catch {
@@ -330,9 +368,15 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     if (!session) return { error: "You're not signed in, Trainer." };
 
     const prevBall = get().profile?.display_ball;
+    const requestId = get().displayBallSync.requestId + 1;
     // Optimistic update before network call
     set(state => ({
       profile: state.profile ? { ...state.profile, display_ball: ballId } : null,
+      displayBallSync: {
+        inFlight: true,
+        pendingBallId: ballId,
+        requestId,
+      },
     }));
 
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
@@ -347,16 +391,47 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       });
       const data = await res.json();
       if (!res.ok) {
+        if (get().displayBallSync.requestId !== requestId) {
+          return { error: null };
+        }
         // Revert on failure
         set(state => ({
           profile: state.profile ? { ...state.profile, display_ball: prevBall ?? 'poke-ball' } : null,
+          displayBallSync: {
+            inFlight: false,
+            pendingBallId: null,
+            requestId,
+          },
         }));
         return { error: data.error ?? null };
       }
+
+      if (get().displayBallSync.requestId !== requestId) {
+        return { error: null };
+      }
+
+      set(state => ({
+        profile: state.profile ? { ...state.profile, display_ball: ballId } : null,
+        displayBallSync: {
+          inFlight: false,
+          pendingBallId: null,
+          requestId,
+        },
+      }));
+      const { profile: updatedProfile, stats: updatedStats } = get();
+      writeUserCache(session.user.id, updatedProfile, updatedStats);
       return { error: null };
     } catch {
+      if (get().displayBallSync.requestId !== requestId) {
+        return { error: null };
+      }
       set(state => ({
         profile: state.profile ? { ...state.profile, display_ball: prevBall ?? 'poke-ball' } : null,
+        displayBallSync: {
+          inFlight: false,
+          pendingBallId: null,
+          requestId,
+        },
       }));
       return { error: "Couldn't update your display ball. Try again." };
     }

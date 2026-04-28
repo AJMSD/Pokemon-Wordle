@@ -28,7 +28,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
       setError(error)
       setLoading(false)
     })
-  }, [isGuest])
+  }, [isGuest, fetchMe])
 
   const avatarUrl = profile?.avatar_config ? getAvatarUrl(profile.avatar_config) : null
   const displayBall = profile?.display_ball ?? 'poke-ball'
