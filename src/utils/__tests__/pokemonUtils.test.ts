@@ -58,7 +58,7 @@ describe('getDailyPokemonIndex', () => {
   it('returns the same index for the same date', () => {
     vi.setSystemTime(new Date('2026-04-25T10:00:00Z'))
     const first = getDailyPokemonIndex()
-    vi.setSystemTime(new Date('2026-04-25T22:00:00Z'))
+    vi.setSystemTime(new Date('2026-04-25T14:00:00Z'))
     const second = getDailyPokemonIndex()
     expect(first).toBe(second)
   })
