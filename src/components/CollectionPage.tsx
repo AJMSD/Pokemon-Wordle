@@ -194,7 +194,7 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
           <section className="mb-8">
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Streak Tier</h3>
             <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex w-full items-center">
                 {standardBalls.map((ball, i) => {
                   const isPast = ball.status === 'past_tier'
                   const isCurrent = ball.status === 'current_tier'
@@ -205,7 +205,7 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
 
                   return (
                     <React.Fragment key={ball.id}>
-                      <div className="flex flex-col items-center gap-1">
+                      <div className="flex flex-col items-center gap-1 flex-shrink-0">
                         <button
                           disabled={!canSelect}
                           onClick={() => canSelect && setSelectedBall(isSelected ? null : ball.id)}
@@ -249,7 +249,7 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
                         )}
                       </div>
                       {i < standardBalls.length - 1 && (
-                        <div className={`h-0.5 w-5 flex-shrink-0 ${i < currentTierIdx ? 'bg-green-400' : 'bg-gray-200'}`} />
+                        <div className={`h-0.5 flex-1 min-w-4 ${i < currentTierIdx ? 'bg-green-400' : 'bg-gray-200'}`} />
                       )}
                     </React.Fragment>
                   )
