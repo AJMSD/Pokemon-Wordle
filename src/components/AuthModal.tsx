@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useAuthStore } from '../store/authStore'
 
 type AuthView = 'login' | 'signup' | 'forgot-password' | 'verify-email' | 'reset-password' | 'username-setup'
+const LOGIN_TIMEOUT_MS = 15000
 
 interface AuthModalProps {
   isOpen: boolean
@@ -95,7 +96,12 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
     e.preventDefault()
     setError(null)
     await withLoading(async () => {
-      const { error } = await signIn(email, password)
+      const timeoutResult = new Promise<{ error: string | null }>(resolve => {
+        setTimeout(() => {
+          resolve({ error: 'Sign-in timed out. Please check your connection and try again.' })
+        }, LOGIN_TIMEOUT_MS)
+      })
+      const { error } = await Promise.race([signIn(email, password), timeoutResult])
       if (error) {
         setError(error)
         return

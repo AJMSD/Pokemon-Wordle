@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from './authStore'
+import { useGameStore } from './gameStore'
 import { supabase } from '../lib/supabase'
 
 function deferred<T>() {
@@ -315,6 +316,14 @@ describe('authStore cache lifecycle', () => {
       isGuest: false,
       isLoading: false,
     } as any)
+    useGameStore.setState({
+      guesses: ['pikachu', 'bulbasaur'],
+      gameStatus: 'won',
+      sessionVersion: 3,
+      puzzleDateKey: '2026-04-28',
+      staleLock: true,
+      rejectedGuess: 'pikachu',
+    } as any)
 
     const authAny = supabase.auth as any
     authAny.signOut = vi.fn().mockResolvedValue(undefined)
@@ -322,5 +331,12 @@ describe('authStore cache lifecycle', () => {
     await useAuthStore.getState().signOut()
 
     expect(localStorage.getItem('wurmple_user_cache')).toBeNull()
+    const gameState = useGameStore.getState()
+    expect(gameState.guesses).toEqual([])
+    expect(gameState.gameStatus).toBe('playing')
+    expect(gameState.sessionVersion).toBeNull()
+    expect(gameState.puzzleDateKey).toBeNull()
+    expect(gameState.staleLock).toBe(false)
+    expect(gameState.rejectedGuess).toBeNull()
   })
 })

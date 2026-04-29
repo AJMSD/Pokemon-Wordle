@@ -22,6 +22,14 @@ function mapServerHints(
   ];
 }
 
+function getEmptyHints() {
+  return [
+    { type: 'ability' as const, value: '', revealed: false },
+    { type: 'generation' as const, value: '', revealed: false },
+    { type: 'type' as const, value: [], revealed: false },
+  ];
+}
+
 let serverSyncEpoch = 0;
 
 const useGameStore = create<GameState & GameActions>((set, get) => ({
@@ -103,11 +111,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
         dailyPokemon,
         pokemonList,
         guesses: [],
-        hints: [
-          { type: 'ability', value: '', revealed: false },
-          { type: 'generation', value: '', revealed: false },
-          { type: 'type', value: [], revealed: false }
-        ],
+        hints: getEmptyHints(),
         gameStatus: 'playing',
         isLoading: false,
         lastPlayedDate: today
@@ -236,11 +240,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
   resetGame: () => {
     set({
       guesses: [],
-      hints: [
-        { type: 'ability', value: '', revealed: false },
-        { type: 'generation', value: '', revealed: false },
-        { type: 'type', value: [], revealed: false }
-      ],
+      hints: getEmptyHints(),
       gameStatus: 'playing',
       error: null
     });
@@ -270,11 +270,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
         dailyPokemon: newPokemon, 
         isLoading: false,
         guesses: [],
-        hints: [
-          { type: 'ability', value: '', revealed: false },
-          { type: 'generation', value: '', revealed: false },
-          { type: 'type', value: [], revealed: false }
-        ],
+        hints: getEmptyHints(),
         gameStatus: 'playing'
       });
     } catch (error) {
@@ -434,6 +430,10 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
   invalidateServerSessionSync: () => {
     serverSyncEpoch += 1;
     set({
+      guesses: [],
+      hints: getEmptyHints(),
+      gameStatus: 'playing',
+      error: null,
       sessionVersion: null,
       puzzleDateKey: null,
       isSubmitting: false,
@@ -442,6 +442,8 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       newlyUnlockedBalls: [],
       rejectedGuess: null,
     });
+    localStorage.removeItem('gameState');
+    localStorage.removeItem('lastPlayedDate');
   },
 
   clearRateLimitLock:      () => set({ rateLimitUntil: null }),

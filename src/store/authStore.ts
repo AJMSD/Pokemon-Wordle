@@ -322,6 +322,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
           if (session) {
             await applySession(session, forcePasswordRecovery);
           } else {
+            useGameStore.getState().invalidateServerSessionSync();
             authSessionEpoch += 1;
             fetchMeInFlight = null;
             set({
@@ -428,6 +429,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
 
   signOut: async () => {
     const signOutEpoch = ++authSessionEpoch;
+    useGameStore.getState().invalidateServerSessionSync();
     fetchMeInFlight = null;
     set({
       user: null,
