@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
+import { isJsonEqual, readJsonCache, removeCacheKey, removeCacheKeysByPrefix, writeJsonCache } from '../lib/cache';
 import { useGameStore } from './gameStore';
 import type { User, Session } from '../lib/supabase';
 import type { AvatarConfig } from '../utils/avatarUtils';
@@ -35,6 +36,12 @@ interface Stats {
   total_losses: number;
   guess_distribution: Record<string, number>;
   best_guess_summary: string | null;
+}
+
+interface UserCachePayload {
+  userId: string;
+  profile: Profile | null;
+  stats: Stats | null;
 }
 
 interface AuthState {
@@ -76,7 +83,21 @@ let passwordResetInFlight: Promise<{ error: string | null }> | null = null;
 let authInitInFlight: Promise<void> | null = null;
 let authListenerUnsubscribe: (() => void) | null = null;
 let authSessionEpoch = 0;
+const USER_CACHE_KEY = 'wurmple_user_cache';
 const RECOVERY_PENDING_USER_KEY = 'wurmple_recovery_pending_user_id';
+const APP_STORAGE_KEYS_TO_CLEAR_ON_SIGNOUT = [
+  USER_CACHE_KEY,
+  RECOVERY_PENDING_USER_KEY,
+  'gameState',
+  'lastPlayedDate',
+  'wurmple_avatar_pokemon_list',
+  'tier_prompt_dismissed',
+] as const;
+const APP_STORAGE_PREFIXES_TO_CLEAR_ON_SIGNOUT = [
+  'wurmple_balls_cache:',
+  'pokemon_list_cache_',
+  'pokemon_detail_cache_',
+] as const;
 
 function readRecoveryPendingUserId() {
   if (typeof window === 'undefined') return null;
@@ -97,12 +118,7 @@ function markRecoveryRequiredForUser(userId: string) {
 }
 
 function clearRecoveryRequirement() {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.removeItem(RECOVERY_PENDING_USER_KEY);
-  } catch {
-    // Ignore storage write failures (quota/private mode)
-  }
+  removeCacheKey(RECOVERY_PENDING_USER_KEY);
 }
 
 function isRecoveryRequiredForUser(userId: string) {
@@ -162,24 +178,12 @@ function clearRecoveryUrlParams() {
 }
 
 function writeUserCache(userId: string, profile: Profile | null, stats: Stats | null) {
-  try {
-    localStorage.setItem('wurmple_user_cache', JSON.stringify({
-      userId,
-      profile,
-      stats,
-    }));
-  } catch {
-    // Ignore cache write failures (quota/private mode)
-  }
+  writeJsonCache<UserCachePayload>(USER_CACHE_KEY, { userId, profile, stats });
 }
 
-function clearUserCache() {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.removeItem('wurmple_user_cache');
-  } catch {
-    // Ignore cache remove failures (quota/private mode)
-  }
+function clearAppStorageOnSignOut() {
+  APP_STORAGE_KEYS_TO_CLEAR_ON_SIGNOUT.forEach(removeCacheKey);
+  removeCacheKeysByPrefix([...APP_STORAGE_PREFIXES_TO_CLEAR_ON_SIGNOUT]);
 }
 
 function writeUserCacheFromState(
@@ -237,52 +241,73 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
           isProfileHydrating: !isRecoverySession,
         }));
 
-        // Apply cached profile/stats immediately for instant display
         try {
-          const cached = localStorage.getItem('wurmple_user_cache');
-          if (cached) {
-            const cachedData = JSON.parse(cached);
-            if (cachedData.userId === session.user.id) {
-              cachedProfile = cachedData.profile ?? null;
-              cachedStats = cachedData.stats ?? null;
-              if (authSessionEpoch === sessionEpoch) {
-                set({ profile: cachedProfile, stats: cachedStats });
-              }
+          // Apply cached profile/stats immediately for instant display
+          const cachedData = readJsonCache<UserCachePayload>(USER_CACHE_KEY);
+          if (cachedData?.userId === session.user.id) {
+            cachedProfile = cachedData.profile ?? null;
+            cachedStats = cachedData.stats ?? null;
+            if (authSessionEpoch === sessionEpoch) {
+              set({ profile: cachedProfile, stats: cachedStats });
             }
           }
-        } catch { /* ignore malformed cache */ }
 
-        let profile: Profile | null = null;
-        if (!isRecoverySession) {
-          const { data } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .maybeSingle();
-          profile = data ?? null;
-        }
+          let profile: Profile | null = null;
+          if (!isRecoverySession) {
+            const { data, error } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', session.user.id)
+              .maybeSingle();
+            if (error) {
+              throw error;
+            }
+            profile = data ?? null;
+          }
 
-        if (authSessionEpoch !== sessionEpoch) {
-          return;
-        }
+          if (authSessionEpoch !== sessionEpoch) {
+            return;
+          }
 
-        set(state => ({
-          user: session.user,
-          session,
-          profile: isRecoverySession
-            ? cachedProfile ?? (state.user?.id === session.user.id ? state.profile : null)
-            : profile,
-          stats: cachedStats ?? (state.user?.id === session.user.id ? state.stats : null),
-          isGuest: false,
-          isLoading: false,
-          pendingEmail: null,
-          pendingPasswordRecovery: isRecoverySession || state.pendingPasswordRecovery,
-          hasResolvedProfile: true,
-          isProfileHydrating: false,
-        }));
-        writeUserCacheFromState(get(), session.user.id);
-        if (!isRecoverySession) {
-          void get().fetchMe();
+          set(state => ({
+            user: session.user,
+            session,
+            profile: isRecoverySession
+              ? cachedProfile ?? (state.user?.id === session.user.id ? state.profile : null)
+              : profile,
+            stats: cachedStats ?? (state.user?.id === session.user.id ? state.stats : null),
+            isGuest: false,
+            isLoading: false,
+            pendingEmail: null,
+            pendingPasswordRecovery: isRecoverySession || state.pendingPasswordRecovery,
+            hasResolvedProfile: true,
+            isProfileHydrating: false,
+          }));
+          writeUserCacheFromState(get(), session.user.id);
+          if (!isRecoverySession) {
+            void get().fetchMe();
+          }
+        } catch (err) {
+          if (authSessionEpoch !== sessionEpoch) {
+            return;
+          }
+          console.error('Session hydration failed:', err);
+          set(state => {
+            const fallbackProfile = cachedProfile ?? (state.user?.id === session.user.id ? state.profile : null);
+            const fallbackStats = cachedStats ?? (state.user?.id === session.user.id ? state.stats : null);
+            return {
+              user: session.user,
+              session,
+              profile: fallbackProfile,
+              stats: fallbackStats,
+              isGuest: false,
+              isLoading: false,
+              pendingEmail: null,
+              pendingPasswordRecovery: isRecoverySession || state.pendingPasswordRecovery,
+              hasResolvedProfile: isRecoverySession || Boolean(fallbackProfile),
+              isProfileHydrating: false,
+            };
+          });
         }
       };
 
@@ -402,7 +427,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   },
 
   signOut: async () => {
-    authSessionEpoch += 1;
+    const signOutEpoch = ++authSessionEpoch;
     fetchMeInFlight = null;
     set({
       user: null,
@@ -416,14 +441,19 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       pendingEmail: null,
       pendingPasswordRecovery: false,
     });
-    clearUserCache();
-    await resetToFreshGuestGameState('Guest game init after sign-out failed:');
+    clearAppStorageOnSignOut();
 
     try {
       await supabase.auth.signOut({ scope: 'local' });
     } catch (err) {
       console.warn('Supabase sign-out failed (local state already cleared):', err);
     }
+
+    if (authSessionEpoch !== signOutEpoch) {
+      return;
+    }
+
+    await resetToFreshGuestGameState('Guest game init after sign-out failed:');
   },
 
   sendPasswordReset: async (email) => {
@@ -560,26 +590,37 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         if (res.status === 401) return { error: "You're not signed in, Trainer." };
         if (res.status === 404) return { error: 'Trainer profile not found. Try signing in again.' };
         const data = await res.json();
-        const { session: currentSession } = get();
+        const currentState = get();
+        const currentSession = currentState.session;
         if (!currentSession || currentSession.access_token !== sessionToken) {
           return { error: null };
         }
-        set(state => ({
-          profile: data.profile
-            ? {
-                ...(state.profile ?? data.profile),
-                ...data.profile,
-                display_ball: state.displayBallSync.inFlight
-                  ? (state.displayBallSync.pendingBallId ?? state.profile?.display_ball ?? data.profile.display_ball)
-                  : data.profile.display_ball,
-              }
-            : state.profile,
-          stats: data.stats ?? null,
-        }));
+
+        const nextProfile = data.profile
+          ? {
+              ...(currentState.profile ?? data.profile),
+              ...data.profile,
+              display_ball: currentState.displayBallSync.inFlight
+                ? (currentState.displayBallSync.pendingBallId ?? currentState.profile?.display_ball ?? data.profile.display_ball)
+                : data.profile.display_ball,
+            }
+          : currentState.profile;
+        const nextStats = data.stats ?? null;
+        const profileChanged = !isJsonEqual(currentState.profile, nextProfile);
+        const statsChanged = !isJsonEqual(currentState.stats, nextStats);
+
+        if (!profileChanged && !statsChanged) {
+          return { error: null };
+        }
+
+        set({
+          profile: nextProfile,
+          stats: nextStats,
+        });
         // Write cache so profile/stats appear instantly on next load
-        const { profile: updatedProfile, stats: updatedStats, session: latestSession } = get();
+        const { session: latestSession } = get();
         if (latestSession && latestSession.access_token === sessionToken) {
-          writeUserCache(latestSession.user.id, updatedProfile, updatedStats);
+          writeUserCache(latestSession.user.id, nextProfile, nextStats);
         }
         return { error: null };
       } catch {

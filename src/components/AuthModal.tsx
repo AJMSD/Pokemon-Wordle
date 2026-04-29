@@ -81,33 +81,55 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
     setCurrentView(view)
   }
 
+  const withLoading = async (task: () => Promise<void>) => {
+    if (isLoading) return
+    setIsLoading(true)
+    try {
+      await task()
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
-    setIsLoading(true)
-    const { error } = await signIn(email, password)
-    setIsLoading(false)
-    if (error) { setError(error) } else { onClose() }
+    await withLoading(async () => {
+      const { error } = await signIn(email, password)
+      if (error) {
+        setError(error)
+        return
+      }
+      onClose()
+    })
   }
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     if (password.length < 8) { setError('Password must be at least 8 characters'); return }
-    setIsLoading(true)
-    const { error } = await signUp(email, password, username)
-    setIsLoading(false)
-    if (error) { setError(error) } else { switchView('verify-email') }
+    await withLoading(async () => {
+      const { error } = await signUp(email, password, username)
+      if (error) {
+        setError(error)
+        return
+      }
+      switchView('verify-email')
+    })
   }
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     setSuccess(null)
-    setIsLoading(true)
-    const { error } = await sendPasswordReset(email)
-    setIsLoading(false)
-    if (error) { setError(error) } else { setSuccess('Reset email sent! Check your inbox.') }
+    await withLoading(async () => {
+      const { error } = await sendPasswordReset(email)
+      if (error) {
+        setError(error)
+        return
+      }
+      setSuccess('Reset email sent! Check your inbox.')
+    })
   }
 
   const handleResetPassword = async (e: React.FormEvent) => {
@@ -116,30 +138,41 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
     setError(null)
     if (password.length < 8) { setError('Password must be at least 8 characters'); return }
     if (password !== confirmPassword) { setError("Passwords don't match!"); return }
-    setIsLoading(true)
-    const { error } = await confirmPasswordReset(password)
-    setIsLoading(false)
-    if (error) { setError(error) } else { clearPasswordRecovery(); onClose() }
+    await withLoading(async () => {
+      const { error } = await confirmPasswordReset(password)
+      if (error) {
+        setError(error)
+        return
+      }
+      clearPasswordRecovery()
+      onClose()
+    })
   }
 
   const handleUsernameSetup = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
-    setIsLoading(true)
-    const { error } = await setupUsername(username)
-    setIsLoading(false)
-    if (error) { setError(error) } else { onClose() }
+    await withLoading(async () => {
+      const { error } = await setupUsername(username)
+      if (error) {
+        setError(error)
+        return
+      }
+      onClose()
+    })
   }
 
   const handleResend = async () => {
     setError(null)
-    setIsLoading(true)
-    const { error } = await resendVerification()
-    setIsLoading(false)
-    if (error) { setError(error) } else {
+    await withLoading(async () => {
+      const { error } = await resendVerification()
+      if (error) {
+        setError(error)
+        return
+      }
       setSuccess('Verification email resent!')
       setResendCooldown(60)
-    }
+    })
   }
 
   const inputCls = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-400/40 focus:border-red-500 transition-colors'

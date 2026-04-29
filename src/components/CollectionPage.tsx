@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useAuthStore, BALL_NAMES } from '../store/authStore'
+import { isJsonEqual, readJsonCache, writeJsonCache } from '../lib/cache'
 
 interface CollectionPageProps {
   onBack: () => void
@@ -21,6 +22,7 @@ interface BallsResponse {
 
 const SPRITE_BASE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items'
 const STANDARD_ORDER = ['poke-ball', 'great-ball', 'ultra-ball', 'master-ball']
+const BALLS_CACHE_PREFIX = 'wurmple_balls_cache:'
 
 const GUEST_STANDARD: BallEntry[] = [
   { id: 'poke-ball',   display_name: BALL_NAMES['poke-ball'],   category: 'standard', status: 'current_tier', hint: null },
@@ -41,6 +43,18 @@ function isSelectable(ball: BallEntry): boolean {
   return ball.status === 'current_tier' || ball.status === 'past_tier' || ball.status === 'unlocked'
 }
 
+function ballsCacheKey(userId: string) {
+  return `${BALLS_CACHE_PREFIX}${userId}`
+}
+
+function readCachedBalls(userId: string): BallsResponse | null {
+  return readJsonCache<BallsResponse>(ballsCacheKey(userId))
+}
+
+function writeCachedBalls(userId: string, data: BallsResponse) {
+  writeJsonCache(ballsCacheKey(userId), data)
+}
+
 const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
   const session = useAuthStore(state => state.session)
   const profile = useAuthStore(state => state.profile)
@@ -48,22 +62,63 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
   const updateDisplayBall = useAuthStore(state => state.updateDisplayBall)
 
   const [ballData, setBallData] = useState<BallsResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [isInitialLoading, setIsInitialLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [selectedBall, setSelectedBall] = useState<string | null>(null)
   const [settingBall, setSettingBall] = useState(false)
   const [setBallError, setSetBallError] = useState<string | null>(null)
+  const latestFetchIdRef = useRef(0)
 
   useEffect(() => {
-    if (isGuest) { setLoading(false); return }
+    if (isGuest || !session) {
+      setIsInitialLoading(false)
+      setIsRefreshing(false)
+      return
+    }
 
+    const cachedBalls = readCachedBalls(session.user.id)
+    if (cachedBalls) {
+      setBallData(prev => (isJsonEqual(prev, cachedBalls) ? prev : cachedBalls))
+      setIsInitialLoading(false)
+      setIsRefreshing(true)
+    } else {
+      setIsInitialLoading(true)
+      setIsRefreshing(false)
+    }
+
+    const fetchId = latestFetchIdRef.current + 1
+    latestFetchIdRef.current = fetchId
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
     fetch(`${supabaseUrl}/functions/v1/get-balls`, {
-      headers: { 'Authorization': `Bearer ${session!.access_token}` },
+      headers: { 'Authorization': `Bearer ${session.access_token}` },
     })
-      .then(r => r.json())
-      .then(data => { setBallData(data); setLoading(false) })
-      .catch(() => setLoading(false))
-  }, [isGuest, session])
+      .then(async r => {
+        if (!r.ok) {
+          throw new Error(`get-balls failed with status ${r.status}`)
+        }
+        const data = await r.json() as BallsResponse
+        if (latestFetchIdRef.current !== fetchId) {
+          return
+        }
+
+        setBallData(prev => {
+          if (isJsonEqual(prev, data)) {
+            return prev
+          }
+          writeCachedBalls(session.user.id, data)
+          return data
+        })
+        setIsInitialLoading(false)
+        setIsRefreshing(false)
+      })
+      .catch(() => {
+        if (latestFetchIdRef.current !== fetchId) {
+          return
+        }
+        setIsInitialLoading(false)
+        setIsRefreshing(false)
+      })
+  }, [isGuest, session?.user.id, session?.access_token])
 
   async function handleSetBall(ballId: string) {
     setSettingBall(true)
@@ -111,7 +166,7 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
         </div>
       )}
 
-      {loading ? (
+      {isInitialLoading ? (
         <div className="animate-pulse space-y-6">
           <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
             <div className="flex items-center gap-3">
@@ -131,6 +186,10 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
         </div>
       ) : (
         <>
+          {isRefreshing && (
+            <p className="text-xs text-gray-400 mb-4">Refreshing collection...</p>
+          )}
+
           {/* Standard tier track */}
           <section className="mb-8">
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Streak Tier</h3>

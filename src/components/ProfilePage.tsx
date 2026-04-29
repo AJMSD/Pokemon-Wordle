@@ -17,17 +17,28 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
   const isGuest = useAuthStore(state => state.isGuest)
   const fetchMe = useAuthStore(state => state.fetchMe)
 
-  const [loading, setLoading] = useState(false)
+  const [isInitialLoading, setIsInitialLoading] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showPicker, setShowPicker] = useState(false)
 
+  const refreshProfile = () => {
+    const hasCachedData = Boolean(profile || stats)
+    setError(null)
+    setIsInitialLoading(!hasCachedData)
+    setIsRefreshing(hasCachedData)
+    return fetchMe().then(({ error }) => {
+      setError(error)
+      setIsInitialLoading(false)
+      setIsRefreshing(false)
+    })
+  }
+
   useEffect(() => {
     if (isGuest) return
-    setLoading(true)
-    fetchMe().then(({ error }) => {
-      setError(error)
-      setLoading(false)
-    })
+    void refreshProfile()
+    // fetchMe is stable from Zustand; mount-time refresh is enough.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isGuest, fetchMe])
 
   const avatarUrl = profile?.avatar_config ? getAvatarUrl(profile.avatar_config) : null
@@ -86,7 +97,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
             <p className="text-sm font-semibold text-gray-700 mb-0.5">Sign in to track your stats</p>
             <p className="text-xs text-gray-400">Win streaks, guesses, and more</p>
           </div>
-        ) : loading ? (
+        ) : isInitialLoading ? (
           <div className="animate-pulse space-y-2">
             <div className="grid grid-cols-4 gap-2">
               {[...Array(4)].map((_, i) => (
@@ -95,45 +106,53 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
             </div>
             <div className="h-8 bg-gray-100 rounded-lg" />
           </div>
-        ) : error ? (
-          <div className="text-center py-4">
-            <p className="text-sm text-gray-500 mb-2">Could not load profile</p>
-            <button
-              onClick={() => {
-                setError(null)
-                setLoading(true)
-                fetchMe().then(({ error }) => { setError(error); setLoading(false) })
-              }}
-              className="text-xs text-pokemon-red font-semibold hover:underline"
-            >
-              Retry
-            </button>
-          </div>
-        ) : stats ? (
+        ) : (
           <>
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              <div className="bg-gray-50 rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold text-gray-900">{stats.current_streak}</p>
-                <p className="text-xs text-gray-500 mt-0.5">Current Streak</p>
+            {error && (
+              <div className="text-center py-4">
+                <p className="text-sm text-gray-500 mb-2">Could not load profile</p>
+                <button
+                  onClick={() => {
+                    void refreshProfile()
+                  }}
+                  className="text-xs text-pokemon-red font-semibold hover:underline"
+                >
+                  Retry
+                </button>
               </div>
-              <div className="bg-gray-50 rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold text-gray-900">{stats.max_streak}</p>
-                <p className="text-xs text-gray-500 mt-0.5">Best Streak</p>
-              </div>
-              <div className="bg-gray-50 rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold text-gray-900">{winPct}%</p>
-                <p className="text-xs text-gray-500 mt-0.5">Win Rate</p>
-              </div>
-              <div className="bg-gray-50 rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold text-gray-900">{stats.avg_guesses > 0 ? stats.avg_guesses.toFixed(1) : '—'}</p>
-                <p className="text-xs text-gray-500 mt-0.5">Avg Guesses</p>
-              </div>
-            </div>
-            <div className="bg-gray-50 rounded-xl px-3 py-2.5 text-xs text-gray-500 text-center font-medium">
-              {stats.total_participations} played · {stats.total_wins}W · {totalLosses}L
-            </div>
+            )}
+
+            {stats ? (
+              <>
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div className="bg-gray-50 rounded-xl p-3 text-center">
+                    <p className="text-2xl font-bold text-gray-900">{stats.current_streak}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Current Streak</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-3 text-center">
+                    <p className="text-2xl font-bold text-gray-900">{stats.max_streak}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Best Streak</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-3 text-center">
+                    <p className="text-2xl font-bold text-gray-900">{winPct}%</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Win Rate</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-3 text-center">
+                    <p className="text-2xl font-bold text-gray-900">{stats.avg_guesses > 0 ? stats.avg_guesses.toFixed(1) : '—'}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Avg Guesses</p>
+                  </div>
+                </div>
+                <div className="bg-gray-50 rounded-xl px-3 py-2.5 text-xs text-gray-500 text-center font-medium">
+                  {stats.total_participations} played · {stats.total_wins}W · {totalLosses}L
+                </div>
+              </>
+            ) : null}
+
+            {isRefreshing && (
+              <p className="text-center text-xs text-gray-400 mt-3">Refreshing profile...</p>
+            )}
           </>
-        ) : null}
+        )}
       </div>
 
       {showPicker && <AvatarPicker onClose={() => setShowPicker(false)} />}
