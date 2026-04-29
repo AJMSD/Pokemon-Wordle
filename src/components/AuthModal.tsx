@@ -112,6 +112,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isLoading) return
     setError(null)
     if (password.length < 8) { setError('Password must be at least 8 characters'); return }
     if (password !== confirmPassword) { setError("Passwords don't match!"); return }

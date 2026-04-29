@@ -70,6 +70,9 @@ interface AuthActions {
 }
 
 let fetchMeInFlight: { token: string; promise: Promise<{ error: string | null }> } | null = null;
+let passwordResetInFlight: Promise<{ error: string | null }> | null = null;
+let authInitInFlight: Promise<void> | null = null;
+let authListenerUnsubscribe: (() => void) | null = null;
 const RECOVERY_PENDING_USER_KEY = 'wurmple_recovery_pending_user_id';
 
 function readRecoveryPendingUserId() {
@@ -201,85 +204,110 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   pendingEmail: null,
 
   initialize: async () => {
-    set({ isLoading: true });
+    if (authInitInFlight) {
+      return authInitInFlight;
+    }
 
-    const applySession = async (session: Session, forcePasswordRecovery: boolean) => {
-      let cachedProfile: Profile | null = null;
-      let cachedStats: Stats | null = null;
-      if (forcePasswordRecovery) {
-        markRecoveryRequiredForUser(session.user.id);
-      }
-      const persistentlyRequired = isRecoveryRequiredForUser(session.user.id);
+    authInitInFlight = (async () => {
+      set({ isLoading: true });
 
-      // Apply cached profile/stats immediately for instant display
-      try {
-        const cached = localStorage.getItem('wurmple_user_cache');
-        if (cached) {
-          const cachedData = JSON.parse(cached);
-          if (cachedData.userId === session.user.id) {
-            cachedProfile = cachedData.profile ?? null;
-            cachedStats = cachedData.stats ?? null;
-            set({ profile: cachedProfile, stats: cachedStats });
-          }
+      const applySession = async (session: Session, forcePasswordRecovery: boolean) => {
+        let cachedProfile: Profile | null = null;
+        let cachedStats: Stats | null = null;
+        if (forcePasswordRecovery) {
+          markRecoveryRequiredForUser(session.user.id);
         }
-      } catch { /* ignore malformed cache */ }
+        const persistentlyRequired = isRecoveryRequiredForUser(session.user.id);
+        const isRecoverySession = forcePasswordRecovery || persistentlyRequired;
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', session.user.id)
-        .maybeSingle();
+        // Apply cached profile/stats immediately for instant display
+        try {
+          const cached = localStorage.getItem('wurmple_user_cache');
+          if (cached) {
+            const cachedData = JSON.parse(cached);
+            if (cachedData.userId === session.user.id) {
+              cachedProfile = cachedData.profile ?? null;
+              cachedStats = cachedData.stats ?? null;
+              set({ profile: cachedProfile, stats: cachedStats });
+            }
+          }
+        } catch { /* ignore malformed cache */ }
 
-      set(state => ({
-        user: session.user,
-        session,
-        profile: profile ?? null,
-        stats: cachedStats ?? (state.user?.id === session.user.id ? state.stats : null),
-        isGuest: false,
-        isLoading: false,
-        pendingEmail: null,
-        pendingPasswordRecovery: forcePasswordRecovery || persistentlyRequired || state.pendingPasswordRecovery,
-      }));
-      writeUserCacheFromState(get(), session.user.id);
-      void get().fetchMe();
-    };
+        let profile: Profile | null = null;
+        if (!isRecoverySession) {
+          const { data } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .maybeSingle();
+          profile = data ?? null;
+        }
 
-    try {
-      supabase.auth.onAuthStateChange(async (event, session) => {
+        set(state => ({
+          user: session.user,
+          session,
+          profile: isRecoverySession
+            ? cachedProfile ?? (state.user?.id === session.user.id ? state.profile : null)
+            : profile,
+          stats: cachedStats ?? (state.user?.id === session.user.id ? state.stats : null),
+          isGuest: false,
+          isLoading: false,
+          pendingEmail: null,
+          pendingPasswordRecovery: isRecoverySession || state.pendingPasswordRecovery,
+        }));
+        writeUserCacheFromState(get(), session.user.id);
+        if (!isRecoverySession) {
+          void get().fetchMe();
+        }
+      };
+
+      try {
+        authListenerUnsubscribe?.();
+        authListenerUnsubscribe = null;
+        const authStateChangeResult = supabase.auth.onAuthStateChange(async (event, session) => {
+          const recoveryFromUrl = getRecoveryContextFromUrl();
+          const recoveryFromEvent = event === 'PASSWORD_RECOVERY';
+          const forcePasswordRecovery = recoveryFromEvent || (recoveryFromUrl.isRecovery && recoveryFromUrl.hasAuthToken);
+
+          if (session) {
+            await applySession(session, forcePasswordRecovery);
+          } else {
+            set({
+              user: null,
+              session: null,
+              profile: null,
+              stats: null,
+              displayBallSync: { inFlight: false, pendingBallId: null, requestId: 0 },
+              isGuest: true,
+              pendingEmail: null,
+              pendingPasswordRecovery: false,
+            });
+            await resetToFreshGuestGameState('Guest game init after auth session loss failed:');
+          }
+        });
+        const subscription = (authStateChangeResult as { data?: { subscription?: { unsubscribe?: () => void } } } | undefined)?.data?.subscription;
+        authListenerUnsubscribe = typeof subscription?.unsubscribe === 'function'
+          ? () => subscription.unsubscribe()
+          : null;
+
         const recoveryFromUrl = getRecoveryContextFromUrl();
-        const recoveryFromEvent = event === 'PASSWORD_RECOVERY';
-        const forcePasswordRecovery = recoveryFromEvent || (recoveryFromUrl.isRecovery && recoveryFromUrl.hasAuthToken);
+        const { data: { session } } = await supabase.auth.getSession();
+        const forcePasswordRecovery = recoveryFromUrl.isRecovery && recoveryFromUrl.hasAuthToken;
 
         if (session) {
           await applySession(session, forcePasswordRecovery);
         } else {
-          set({
-            user: null,
-            session: null,
-            profile: null,
-            stats: null,
-            displayBallSync: { inFlight: false, pendingBallId: null, requestId: 0 },
-            isGuest: true,
-            pendingEmail: null,
-            pendingPasswordRecovery: false,
-          });
-          await resetToFreshGuestGameState('Guest game init after auth session loss failed:');
+          set({ isLoading: false });
         }
-      });
-
-      const recoveryFromUrl = getRecoveryContextFromUrl();
-      const { data: { session } } = await supabase.auth.getSession();
-      const forcePasswordRecovery = recoveryFromUrl.isRecovery && recoveryFromUrl.hasAuthToken;
-
-      if (session) {
-        await applySession(session, forcePasswordRecovery);
-      } else {
+      } catch (err) {
+        console.error('Auth init failed:', err);
         set({ isLoading: false });
+      } finally {
+        authInitInFlight = null;
       }
-    } catch (err) {
-      console.error('Auth init failed:', err);
-      set({ isLoading: false });
-    }
+    })();
+
+    return authInitInFlight;
   },
 
   signUp: async (email, password, username) => {
@@ -371,12 +399,50 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   },
 
   confirmPasswordReset: async (password) => {
-    const { error } = await supabase.auth.updateUser({ password });
-    if (!error) {
-      clearRecoveryRequirement();
-      clearRecoveryUrlParams();
+    if (passwordResetInFlight) {
+      return passwordResetInFlight;
     }
-    return { error: error?.message ?? null };
+
+    const request = (async () => {
+      try {
+        const { error } = await supabase.auth.updateUser({ password });
+        if (!error) {
+          clearRecoveryRequirement();
+          clearRecoveryUrlParams();
+          set({ pendingPasswordRecovery: false });
+          await get().fetchMe();
+          return { error: null };
+        }
+
+        const status = (error as { status?: number })?.status;
+        const rawMessage = error.message ?? '';
+        const lowerMessage = rawMessage.toLowerCase();
+        if (status === 422) {
+          if (lowerMessage.includes('password should be different') || lowerMessage.includes('same password')) {
+            return { error: 'Use a different password than your current one.' };
+          }
+          if (lowerMessage.includes('password')) {
+            return { error: 'That password does not meet requirements. Please choose a stronger password.' };
+          }
+          return { error: 'Password reset link is invalid or expired. Request a new reset email and try again.' };
+        }
+
+        return { error: rawMessage || 'Could not update password. Please try again.' };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const lowerMessage = message.toLowerCase();
+        if (lowerMessage.includes('lock') && lowerMessage.includes('stole it')) {
+          return { error: 'Another auth request interrupted password reset. Please try again.' };
+        }
+        console.error('Password reset failed unexpectedly:', err);
+        return { error: 'Could not update password. Please try again.' };
+      } finally {
+        passwordResetInFlight = null;
+      }
+    })();
+
+    passwordResetInFlight = request;
+    return request;
   },
 
   resendVerification: async () => {

@@ -68,11 +68,11 @@ function App() {
   }, [initialize, initializeGame])
 
   useEffect(() => {
-    if (!isGuest && session?.access_token && user?.email_confirmed_at && user.id !== lastSyncedUserId.current) {
+    if (!pendingPasswordRecovery && !isGuest && session?.access_token && user?.email_confirmed_at && user.id !== lastSyncedUserId.current) {
       lastSyncedUserId.current = user.id
       initializeServerSession(session.access_token)
     }
-  }, [isGuest, session?.access_token, user?.email_confirmed_at, user?.id, initializeServerSession])
+  }, [pendingPasswordRecovery, isGuest, session?.access_token, user?.email_confirmed_at, user?.id, initializeServerSession])
 
   useEffect(() => {
     if (isGuest) {
