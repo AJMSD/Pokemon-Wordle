@@ -256,7 +256,6 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         const sessionEpoch = ++authSessionEpoch;
         const gameStore = useGameStore.getState();
         gameStore.setStorageScope(session.user.id);
-        await gameStore.initializeGame();
         let cachedProfile: Profile | null = null;
         let cachedStats: Stats | null = null;
         if (forcePasswordRecovery) {

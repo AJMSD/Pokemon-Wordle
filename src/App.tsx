@@ -112,9 +112,9 @@ function App() {
   useEffect(() => {
     if (!pendingPasswordRecovery && !isGuest && session?.access_token && user?.email_confirmed_at && user.id !== lastSyncedUserId.current) {
       lastSyncedUserId.current = user.id
-      initializeServerSession(session.access_token)
+      initializeGame().then(() => initializeServerSession(session.access_token))
     }
-  }, [pendingPasswordRecovery, isGuest, session?.access_token, user?.email_confirmed_at, user?.id, initializeServerSession])
+  }, [pendingPasswordRecovery, isGuest, session?.access_token, user?.email_confirmed_at, user?.id, initializeGame, initializeServerSession])
 
   useEffect(() => {
     if (isGuest) {
