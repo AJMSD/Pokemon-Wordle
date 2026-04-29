@@ -6,7 +6,19 @@ import GuessList from './GuessList'
 import useToast from '../hooks/useToast'
 import useGame from '../hooks/useGame'
 
-const PokedexUI: React.FC = () => {
+interface PokedexUIProps {
+  onShowCollection?: () => void
+  onShowProfile?: () => void
+  onShowAuth: () => void
+  onSignOut: () => void | Promise<void>
+}
+
+const PokedexUI: React.FC<PokedexUIProps> = ({
+  onShowCollection,
+  onShowProfile,
+  onShowAuth,
+  onSignOut,
+}) => {
   const [currentGuess, setCurrentGuess] = useState('')
   const {
     makeGuess, submitGuessToServer, error, resetError,
@@ -23,6 +35,7 @@ const PokedexUI: React.FC = () => {
   const [selectedIndex, setSelectedIndex] = useState(-1)
   const [justSelected, setJustSelected] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
+  const [showMobileTrainerMenu, setShowMobileTrainerMenu] = useState(false)
   const [rateLimitSeconds, setRateLimitSeconds] = useState<number | null>(null)
   const [inputShaking, setInputShaking] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -43,6 +56,12 @@ const PokedexUI: React.FC = () => {
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  useEffect(() => {
+    if (!isMobile) {
+      setShowMobileTrainerMenu(false)
+    }
+  }, [isMobile])
 
   // Check for a new day when component mounts
   useEffect(() => {
@@ -247,10 +266,78 @@ const PokedexUI: React.FC = () => {
       <div className="pokedex-left-panel">
         <div className="left-panel-top">
           <div className="blue-light"></div>
-          <div className="small-lights-container">
-            <div className="small-light red"></div>
-            <div className="small-light yellow"></div>
-            <div className="small-light green"></div>
+          <div className="left-panel-controls">
+            <div className="small-lights-container">
+              <div className="small-light red"></div>
+              <div className="small-light yellow"></div>
+              <div className="small-light green"></div>
+            </div>
+            {isMobile && (
+              <div className="mobile-trainer-menu">
+                <button
+                  type="button"
+                  className="mobile-trainer-trigger"
+                  onClick={() => setShowMobileTrainerMenu(prev => !prev)}
+                  aria-expanded={showMobileTrainerMenu}
+                  aria-controls="mobile-trainer-actions"
+                >
+                  Trainer
+                </button>
+                {showMobileTrainerMenu && (
+                  <div id="mobile-trainer-actions" className="mobile-trainer-actions">
+                    {isGuest ? (
+                      <button
+                        type="button"
+                        className="mobile-trainer-action"
+                        onClick={() => {
+                          setShowMobileTrainerMenu(false)
+                          onShowAuth()
+                        }}
+                      >
+                        Sign In
+                      </button>
+                    ) : (
+                      <>
+                        {onShowCollection && (
+                          <button
+                            type="button"
+                            className="mobile-trainer-action"
+                            onClick={() => {
+                              setShowMobileTrainerMenu(false)
+                              onShowCollection()
+                            }}
+                          >
+                            Collection
+                          </button>
+                        )}
+                        {onShowProfile && (
+                          <button
+                            type="button"
+                            className="mobile-trainer-action"
+                            onClick={() => {
+                              setShowMobileTrainerMenu(false)
+                              onShowProfile()
+                            }}
+                          >
+                            Profile
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="mobile-trainer-action danger"
+                          onClick={async () => {
+                            setShowMobileTrainerMenu(false)
+                            await onSignOut()
+                          }}
+                        >
+                          Sign Out
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
         <div className="main-screen-container">

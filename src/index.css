@@ -96,6 +96,13 @@
   padding: 8px 10px;
 }
 
+.left-panel-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+}
+
 .blue-light {
   width: 60px;
   height: 60px;
@@ -133,6 +140,53 @@
   display: flex;
   gap: 10px;
   align-items: center;
+}
+
+.mobile-trainer-menu {
+  position: relative;
+}
+
+.mobile-trainer-trigger {
+  background: #f4f4f4;
+  border: 2px solid #222;
+  color: #222;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 10px;
+  min-height: 36px;
+  min-width: 84px;
+  line-height: 1;
+}
+
+.mobile-trainer-actions {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  width: 150px;
+  border: 2px solid #222;
+  background: #fff;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.35);
+  z-index: 30;
+}
+
+.mobile-trainer-action {
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border: none;
+  border-bottom: 1px solid #ddd;
+  background: #fff;
+  color: #222;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mobile-trainer-action:last-child {
+  border-bottom: none;
+}
+
+.mobile-trainer-action.danger {
+  color: #9f1239;
 }
 
 .small-light {
@@ -749,6 +803,13 @@
   .masterball-button {
     width: 40px;
     height: 40px;
+  }
+
+  .mobile-trainer-trigger {
+    min-height: 40px;
+    min-width: 90px;
+    font-size: 11px;
+    padding: 6px 8px;
   }
 
   /* Make the masterball button slightly smaller on mobile */

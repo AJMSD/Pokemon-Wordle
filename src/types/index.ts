@@ -70,6 +70,8 @@ export interface GameActions {
   initializeServerSession: (accessToken: string) => Promise<void>;
   submitGuessToServer: (guess: string, accessToken: string) => Promise<boolean>;
   invalidateServerSessionSync: () => void;
+  setStorageScope: (userId?: string | null) => void;
+  clearScopedProgress: (userId?: string | null) => void;
   clearRateLimitLock: () => void;
   clearStaleLock: () => void;
   clearNewlyUnlockedBalls: () => void;

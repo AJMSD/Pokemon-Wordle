@@ -95,8 +95,6 @@ const RECOVERY_PENDING_USER_KEY = 'wurmple_recovery_pending_user_id';
 const APP_STORAGE_KEYS_TO_CLEAR_ON_SIGNOUT = [
   USER_CACHE_KEY,
   RECOVERY_PENDING_USER_KEY,
-  'gameState',
-  'lastPlayedDate',
   'wurmple_avatar_pokemon_list',
   'tier_prompt_dismissed',
 ] as const;
@@ -134,9 +132,9 @@ function isRecoveryRequiredForUser(userId: string) {
 
 async function resetToFreshGuestGameState(logLabel: string) {
   const gameStore = useGameStore.getState();
+  gameStore.setStorageScope(null);
+  gameStore.clearScopedProgress(null);
   gameStore.invalidateServerSessionSync();
-  localStorage.removeItem('gameState');
-  localStorage.removeItem('lastPlayedDate');
   try {
     await gameStore.initializeGame();
   } catch (err) {
@@ -256,6 +254,9 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
 
       const applySession = async (session: Session, forcePasswordRecovery: boolean) => {
         const sessionEpoch = ++authSessionEpoch;
+        const gameStore = useGameStore.getState();
+        gameStore.setStorageScope(session.user.id);
+        await gameStore.initializeGame();
         let cachedProfile: Profile | null = null;
         let cachedStats: Stats | null = null;
         if (forcePasswordRecovery) {
@@ -357,6 +358,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
             timedOutSignInAttemptId = null;
             lastStartedSignInAttemptId = null;
             useGameStore.getState().invalidateServerSessionSync();
+            useGameStore.getState().setStorageScope(null);
             authSessionEpoch += 1;
             fetchMeInFlight = null;
             set({
@@ -387,6 +389,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
             await applySession(session, forcePasswordRecovery);
           } else {
             useGameStore.getState().invalidateServerSessionSync();
+            useGameStore.getState().setStorageScope(null);
             authSessionEpoch += 1;
             fetchMeInFlight = null;
             set({
@@ -408,6 +411,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         if (session) {
           await applySession(session, forcePasswordRecovery);
         } else {
+          useGameStore.getState().setStorageScope(null);
           authSessionEpoch += 1;
           set({ isLoading: false, hasResolvedProfile: false, isProfileHydrating: false });
         }
@@ -493,6 +497,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     }
     timedOutSignInAttemptId = lastStartedSignInAttemptId;
     useGameStore.getState().invalidateServerSessionSync();
+    useGameStore.getState().setStorageScope(null);
     authSessionEpoch += 1;
     fetchMeInFlight = null;
     set({
@@ -512,6 +517,8 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     timedOutSignInAttemptId = null;
     lastStartedSignInAttemptId = null;
     useGameStore.getState().invalidateServerSessionSync();
+    useGameStore.getState().setStorageScope(null);
+    useGameStore.getState().clearScopedProgress(null);
     fetchMeInFlight = null;
     set({
       user: null,
@@ -526,13 +533,6 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       pendingPasswordRecovery: false,
     });
     clearAppStorageOnSignOut();
-    try {
-      if (typeof window !== 'undefined') {
-        localStorage.clear();
-      }
-    } catch {
-      // Fall back to targeted removals if full localStorage clear is unavailable.
-    }
 
     try {
       let shouldForceClearStorage = false;

@@ -11,6 +11,36 @@ import {
   normalizePokemonName
 } from '../utils/pokemonUtils';
 
+type GameStorageScope = 'guest' | `user:${string}`;
+
+const LEGACY_GAME_STATE_KEY = 'gameState';
+const LEGACY_LAST_PLAYED_DATE_KEY = 'lastPlayedDate';
+
+function getStorageKeys(scope: GameStorageScope) {
+  return {
+    gameState: `wurmple_game:${scope}`,
+    lastPlayedDate: `wurmple_game_last_played:${scope}`,
+  };
+}
+
+function getPersistedStateSnapshot(state: GameState) {
+  return {
+    dailyPokemon: state.dailyPokemon,
+    pokemonList: state.pokemonList,
+    guesses: state.guesses,
+    hints: state.hints,
+    gameStatus: state.gameStatus,
+    lastPlayedDate: state.lastPlayedDate,
+    sessionVersion: state.sessionVersion,
+    puzzleDateKey: state.puzzleDateKey,
+    staleLock: state.staleLock,
+    rateLimitUntil: state.rateLimitUntil,
+    newlyUnlockedBalls: state.newlyUnlockedBalls,
+    rejectedGuess: state.rejectedGuess,
+    pendingGuess: state.pendingGuess,
+  };
+}
+
 function mapServerHints(
   flags: { ability: boolean; generation: boolean; type: boolean },
   hints: { ability?: string; generation?: string; types?: string[] }
@@ -31,6 +61,47 @@ function getEmptyHints() {
 }
 
 let serverSyncEpoch = 0;
+let activeStorageScope: GameStorageScope = 'guest';
+
+function resolveScope(userId?: string | null): GameStorageScope {
+  if (!userId) return 'guest';
+  return `user:${userId}`;
+}
+
+function persistGameStateSnapshot(state: GameState) {
+  const keys = getStorageKeys(activeStorageScope);
+  localStorage.setItem(keys.gameState, JSON.stringify(getPersistedStateSnapshot(state)));
+}
+
+function clearScopeStorage(scope: GameStorageScope) {
+  const keys = getStorageKeys(scope);
+  localStorage.removeItem(keys.gameState);
+  localStorage.removeItem(keys.lastPlayedDate);
+  if (scope === 'guest') {
+    localStorage.removeItem(LEGACY_GAME_STATE_KEY);
+    localStorage.removeItem(LEGACY_LAST_PLAYED_DATE_KEY);
+  }
+}
+
+function migrateLegacyGuestStorage(today: string) {
+  if (activeStorageScope !== 'guest') return null;
+  const legacyDate = localStorage.getItem(LEGACY_LAST_PLAYED_DATE_KEY);
+  const legacyStateRaw = localStorage.getItem(LEGACY_GAME_STATE_KEY);
+  if (!legacyDate || !legacyStateRaw) return null;
+  localStorage.removeItem(LEGACY_GAME_STATE_KEY);
+  localStorage.removeItem(LEGACY_LAST_PLAYED_DATE_KEY);
+  if (legacyDate !== today) return null;
+  try {
+    const parsedState = JSON.parse(legacyStateRaw);
+    const guestKeys = getStorageKeys('guest');
+    localStorage.setItem(guestKeys.lastPlayedDate, legacyDate);
+    localStorage.setItem(guestKeys.gameState, JSON.stringify(parsedState));
+    return { legacyDate, parsedState };
+  } catch (e) {
+    console.error('Failed to parse legacy guest game state', e);
+    return null;
+  }
+}
 
 const useGameStore = create<GameState & GameActions>((set, get) => ({
   dailyPokemon: null,
@@ -60,12 +131,15 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
 
     try {
       const today = getJSTDateKey();
-      const lastPlayed = localStorage.getItem('lastPlayedDate');
+      const keys = getStorageKeys(activeStorageScope);
+      const migratedLegacy = migrateLegacyGuestStorage(today);
+      const lastPlayed = localStorage.getItem(keys.lastPlayedDate) ?? migratedLegacy?.legacyDate ?? null;
+      const savedStateRaw = localStorage.getItem(keys.gameState) ?? (migratedLegacy ? JSON.stringify(migratedLegacy.parsedState) : null);
 
       // Restore previous game state if it's from the same day
-      if (lastPlayed === today && localStorage.getItem('gameState')) {
+      if (lastPlayed === today && savedStateRaw) {
         try {
-          const savedState = JSON.parse(localStorage.getItem('gameState') || '{}');
+          const savedState = JSON.parse(savedStateRaw);
           set({ ...savedState, isLoading: false, lastPlayedDate: today });
           return;
         } catch (e) {
@@ -115,14 +189,21 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
         hints: getEmptyHints(),
         gameStatus: 'playing',
         isLoading: false,
-        lastPlayedDate: today
+        lastPlayedDate: today,
+        sessionVersion: null,
+        puzzleDateKey: null,
+        staleLock: false,
+        rateLimitUntil: null,
+        newlyUnlockedBalls: [],
+        rejectedGuess: null,
+        pendingGuess: null,
       };
 
       set(newState);
 
       // Save state to localStorage
-      localStorage.setItem('lastPlayedDate', today);
-      localStorage.setItem('gameState', JSON.stringify({
+      localStorage.setItem(keys.lastPlayedDate, today);
+      localStorage.setItem(keys.gameState, JSON.stringify({
         dailyPokemon,
         pokemonList,
         guesses: [],
@@ -176,12 +257,9 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
     
     // Persist to localStorage
     const today = getJSTDateKey();
-    localStorage.setItem('lastPlayedDate', today);
-    localStorage.setItem('gameState', JSON.stringify({
-      ...get(),
-      isLoading: false,
-      error: null
-    }));
+    const keys = getStorageKeys(activeStorageScope);
+    localStorage.setItem(keys.lastPlayedDate, today);
+    persistGameStateSnapshot(get());
 
     // Reveal a hint if guess count is 3, 6, or 9
     if (newGuesses.length === 3 || newGuesses.length === 6 || newGuesses.length === 9) {
@@ -224,11 +302,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       set({ hints: newHints, isLoading: false });
       
       // Update localStorage with new hints
-      localStorage.setItem('gameState', JSON.stringify({
-        ...get(),
-        isLoading: false,
-        error: null
-      }));
+      persistGameStateSnapshot(get());
     } catch (error) {
       set({ 
         error: "Couldn't scan for clues. Try again.",
@@ -248,12 +322,9 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
     
     // Update localStorage with reset state
     const today = getJSTDateKey();
-    localStorage.setItem('lastPlayedDate', today);
-    localStorage.setItem('gameState', JSON.stringify({
-      ...get(),
-      isLoading: false,
-      error: null
-    }));
+    const keys = getStorageKeys(activeStorageScope);
+    localStorage.setItem(keys.lastPlayedDate, today);
+    persistGameStateSnapshot(get());
   },
 
   // Selects a new random Pokémon (primarily for testing)
@@ -322,7 +393,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
         s.completion_state === 'lost' ? 'lost' : 'playing';
 
       set(state => ({
-        guesses: s.guesses ?? state.guesses,
+        guesses: s.guesses ?? [],
         hints: s.hint_flags ? mapServerHints(s.hint_flags, s.hints ?? {}) : state.hints,
         gameStatus: state.gameStatus === 'playing' ? newStatus : state.gameStatus,
         sessionVersion: s.version,
@@ -333,9 +404,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       }));
 
       if (requestEpoch !== serverSyncEpoch) return;
-      localStorage.setItem('gameState', JSON.stringify({
-        ...get(), isLoading: false, isSubmitting: false, error: null,
-      }));
+      persistGameStateSnapshot(get());
     } catch (err) {
       console.error('Server session sync failed:', err);
     }
@@ -393,11 +462,10 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
             : get().dailyPokemon,
         });
 
-        localStorage.setItem('lastPlayedDate', getJSTDateKey());
+        const keys = getStorageKeys(activeStorageScope);
+        localStorage.setItem(keys.lastPlayedDate, getJSTDateKey());
         if (requestEpoch !== serverSyncEpoch) return false;
-        localStorage.setItem('gameState', JSON.stringify({
-          ...get(), isLoading: false, isSubmitting: false, error: null,
-        }));
+        persistGameStateSnapshot(get());
         return newStatus === 'won';
       }
 
@@ -444,8 +512,15 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       rejectedGuess: null,
       pendingGuess: null,
     });
-    localStorage.removeItem('gameState');
-    localStorage.removeItem('lastPlayedDate');
+    clearScopeStorage(activeStorageScope);
+  },
+
+  setStorageScope: (userId?: string | null) => {
+    activeStorageScope = resolveScope(userId);
+  },
+
+  clearScopedProgress: (userId?: string | null) => {
+    clearScopeStorage(resolveScope(userId));
   },
 
   clearRateLimitLock:      () => set({ rateLimitUntil: null }),

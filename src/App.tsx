@@ -214,7 +214,14 @@ function App() {
             )
             : showCollection
               ? <CollectionPage onBack={() => setShowCollection(false)} />
-              : <PokedexUI />
+              : (
+                <PokedexUI
+                  onShowCollection={!isGuest ? () => { setShowCollection(true); setShowProfile(false) } : undefined}
+                  onShowProfile={!isGuest ? () => { setShowProfile(true); setShowCollection(false) } : undefined}
+                  onShowAuth={() => { setAuthInitialView('login'); setShowAuth(true) }}
+                  onSignOut={handleSignOut}
+                />
+              )
           }
         </main>
         <AuthModal
