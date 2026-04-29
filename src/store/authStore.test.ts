@@ -355,3 +355,109 @@ describe('authStore cache lifecycle', () => {
     expect(gameState.rejectedGuess).toBeNull()
   })
 })
+
+describe('authStore sign-in timeout safety', () => {
+  beforeEach(() => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co')
+    localStorage.clear()
+    useAuthStore.setState({
+      user: null,
+      session: null,
+      profile: null,
+      stats: null,
+      displayBallSync: {
+        inFlight: false,
+        pendingBallId: null,
+        requestId: 0,
+      },
+      isLoading: false,
+      isGuest: true,
+      pendingPasswordRecovery: false,
+      pendingEmail: null,
+    } as any)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+    vi.restoreAllMocks()
+  })
+
+  it('keeps guest state when timed-out sign-in later emits SIGNED_IN', async () => {
+    const authAny = supabase.auth as any
+    let authCallback: any = null
+    const signInDeferred = deferred<any>()
+
+    authAny.getSession = vi.fn().mockResolvedValue({ data: { session: null } })
+    authAny.onAuthStateChange = vi.fn((cb: any) => {
+      authCallback = cb
+      return { data: { subscription: { unsubscribe: vi.fn() } } }
+    })
+    authAny.signInWithPassword = vi.fn().mockImplementation(() => signInDeferred.promise)
+    authAny.signOut = vi.fn().mockResolvedValue(undefined)
+
+    await useAuthStore.getState().initialize()
+    const signInPromise = useAuthStore.getState().signIn('ash@kanto.com', 'password123')
+    await useAuthStore.getState().markSignInTimedOut()
+
+    signInDeferred.resolve({ error: null })
+    await signInPromise
+    await authCallback('SIGNED_IN', { access_token: 'token-late', user: { id: 'user-1' } })
+
+    await vi.waitFor(() => {
+      const state = useAuthStore.getState()
+      expect(state.isGuest).toBe(true)
+      expect(state.session).toBeNull()
+      expect(state.profile).toBeNull()
+      expect(state.stats).toBeNull()
+    })
+  })
+
+  it('still hydrates profile and stats for successful non-timed-out sign-in', async () => {
+    const authAny = supabase.auth as any
+    let authCallback: any = null
+    const session = { access_token: 'token-ok', user: { id: 'user-1' } } as any
+    const profile = {
+      id: 'user-1',
+      username: 'Ash',
+      avatar_config: {},
+      display_ball: 'poke-ball',
+    }
+
+    authAny.getSession = vi.fn().mockResolvedValue({ data: { session: null } })
+    authAny.onAuthStateChange = vi.fn((cb: any) => {
+      authCallback = cb
+      return { data: { subscription: { unsubscribe: vi.fn() } } }
+    })
+    authAny.signInWithPassword = vi.fn().mockResolvedValue({ error: null })
+
+    ;(supabase as any).from = vi.fn().mockReturnValue({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({ data: profile, error: null }),
+        }),
+      }),
+    })
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 200,
+      ok: true,
+      json: async () => ({
+        profile,
+        stats: { current_streak: 5 },
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await useAuthStore.getState().initialize()
+    const signInResult = await useAuthStore.getState().signIn('ash@kanto.com', 'password123')
+    expect(signInResult.error).toBeNull()
+    await authCallback('SIGNED_IN', session)
+
+    await vi.waitFor(() => {
+      expect(useAuthStore.getState().isGuest).toBe(false)
+      expect(useAuthStore.getState().profile?.username).toBe('Ash')
+      expect(useAuthStore.getState().stats?.current_streak).toBe(5)
+    })
+  })
+})

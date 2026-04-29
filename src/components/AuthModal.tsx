@@ -32,6 +32,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
   const [resendCooldown, setResendCooldown] = useState(0)
 
   const signIn = useAuthStore(state => state.signIn)
+  const markSignInTimedOut = useAuthStore(state => state.markSignInTimedOut)
   const signUp = useAuthStore(state => state.signUp)
   const signInWithGoogle = useAuthStore(state => state.signInWithGoogle)
   const sendPasswordReset = useAuthStore(state => state.sendPasswordReset)
@@ -96,14 +97,20 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
     e.preventDefault()
     setError(null)
     await withLoading(async () => {
-      const timeoutResult = new Promise<{ error: string | null }>(resolve => {
+      const timeoutResult = new Promise<{ timedOut: true; error: string }>(resolve => {
         setTimeout(() => {
-          resolve({ error: 'Sign-in timed out. Please check your connection and try again.' })
+          resolve({ timedOut: true, error: 'Sign-in timed out. Please check your connection and try again.' })
         }, LOGIN_TIMEOUT_MS)
       })
-      const { error } = await Promise.race([signIn(email, password), timeoutResult])
-      if (error) {
-        setError(error)
+      const signInResult = signIn(email, password).then(result => ({ timedOut: false as const, ...result }))
+      const result = await Promise.race([signInResult, timeoutResult])
+      if (result.timedOut) {
+        await markSignInTimedOut()
+        setError(result.error)
+        return
+      }
+      if (result.error) {
+        setError(result.error)
         return
       }
       onClose()

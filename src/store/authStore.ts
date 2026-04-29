@@ -67,6 +67,7 @@ interface AuthActions {
   initialize: () => Promise<void>;
   signUp: (email: string, password: string, username: string) => Promise<{ error: string | null }>;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  markSignInTimedOut: () => Promise<void>;
   signOut: () => Promise<void>;
   sendPasswordReset: (email: string) => Promise<{ error: string | null }>;
   confirmPasswordReset: (password: string) => Promise<{ error: string | null }>;
@@ -85,6 +86,9 @@ let passwordResetInFlight: Promise<{ error: string | null }> | null = null;
 let authInitInFlight: Promise<void> | null = null;
 let authListenerUnsubscribe: (() => void) | null = null;
 let authSessionEpoch = 0;
+let signInAttemptCounter = 0;
+let lastStartedSignInAttemptId: number | null = null;
+let timedOutSignInAttemptId: number | null = null;
 const USER_CACHE_KEY = 'wurmple_user_cache';
 const RECOVERY_PENDING_USER_KEY = 'wurmple_recovery_pending_user_id';
 const APP_STORAGE_KEYS_TO_CLEAR_ON_SIGNOUT = [
@@ -195,6 +199,33 @@ function writeUserCacheFromState(
   if (!state.session) return;
   if (expectedUserId && state.session.user.id !== expectedUserId) return;
   writeUserCache(state.session.user.id, state.profile, state.stats);
+}
+
+function getGuestAuthState(): Pick<
+  AuthState,
+  'user'
+  | 'session'
+  | 'profile'
+  | 'stats'
+  | 'hasResolvedProfile'
+  | 'isProfileHydrating'
+  | 'displayBallSync'
+  | 'isGuest'
+  | 'pendingEmail'
+  | 'pendingPasswordRecovery'
+> {
+  return {
+    user: null,
+    session: null,
+    profile: null,
+    stats: null,
+    hasResolvedProfile: false,
+    isProfileHydrating: false,
+    displayBallSync: { inFlight: false, pendingBallId: null, requestId: 0 },
+    isGuest: true,
+    pendingEmail: null,
+    pendingPasswordRecovery: false,
+  };
 }
 
 const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
@@ -317,27 +348,45 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         authListenerUnsubscribe?.();
         authListenerUnsubscribe = null;
         const authStateChangeResult = supabase.auth.onAuthStateChange(async (event, session) => {
+          const shouldDiscardTimedOutSignIn = event === 'SIGNED_IN'
+            && timedOutSignInAttemptId !== null
+            && lastStartedSignInAttemptId === timedOutSignInAttemptId;
+
+          if (shouldDiscardTimedOutSignIn) {
+            timedOutSignInAttemptId = null;
+            lastStartedSignInAttemptId = null;
+            useGameStore.getState().invalidateServerSessionSync();
+            authSessionEpoch += 1;
+            fetchMeInFlight = null;
+            set({
+              ...getGuestAuthState(),
+              isLoading: false,
+            });
+            try {
+              await supabase.auth.signOut({ scope: 'local' });
+            } catch (err) {
+              console.warn('Local sign-out after timed-out sign-in failed:', err);
+            }
+            await resetToFreshGuestGameState('Guest game init after timed-out sign-in failed:');
+            return;
+          }
+
           const recoveryFromUrl = getRecoveryContextFromUrl();
           const recoveryFromEvent = event === 'PASSWORD_RECOVERY';
           const forcePasswordRecovery = recoveryFromEvent || (recoveryFromUrl.isRecovery && recoveryFromUrl.hasAuthToken);
 
           if (session) {
+            if (event === 'SIGNED_IN') {
+              timedOutSignInAttemptId = null;
+              lastStartedSignInAttemptId = null;
+            }
             await applySession(session, forcePasswordRecovery);
           } else {
             useGameStore.getState().invalidateServerSessionSync();
             authSessionEpoch += 1;
             fetchMeInFlight = null;
             set({
-              user: null,
-              session: null,
-              profile: null,
-              stats: null,
-              hasResolvedProfile: false,
-              isProfileHydrating: false,
-              displayBallSync: { inFlight: false, pendingBallId: null, requestId: 0 },
-              isGuest: true,
-              pendingEmail: null,
-              pendingPasswordRecovery: false,
+              ...getGuestAuthState(),
             });
             await resetToFreshGuestGameState('Guest game init after auth session loss failed:');
           }
@@ -425,12 +474,38 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   },
 
   signIn: async (email, password) => {
+    const attemptId = ++signInAttemptCounter;
+    lastStartedSignInAttemptId = attemptId;
     const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error && lastStartedSignInAttemptId === attemptId) {
+      lastStartedSignInAttemptId = null;
+    }
     return { error: error?.message ?? null };
+  },
+
+  markSignInTimedOut: async () => {
+    if (lastStartedSignInAttemptId === null) {
+      return;
+    }
+    timedOutSignInAttemptId = lastStartedSignInAttemptId;
+    useGameStore.getState().invalidateServerSessionSync();
+    authSessionEpoch += 1;
+    fetchMeInFlight = null;
+    set({
+      ...getGuestAuthState(),
+      isLoading: false,
+    });
+    try {
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch (err) {
+      console.warn('Local sign-out after sign-in timeout failed:', err);
+    }
   },
 
   signOut: async () => {
     const signOutEpoch = ++authSessionEpoch;
+    timedOutSignInAttemptId = null;
+    lastStartedSignInAttemptId = null;
     useGameStore.getState().invalidateServerSessionSync();
     fetchMeInFlight = null;
     set({
