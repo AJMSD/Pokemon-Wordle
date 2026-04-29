@@ -28,7 +28,7 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
   const handleSignOut = onSignOut ?? signOut
 
   return (
-    <header className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-gray-200 bg-white/80 backdrop-blur-sm sticky top-0 z-20 rounded-t-lg mb-6">
+    <header className="relative sm:sticky sm:top-0 z-20 flex items-center justify-between px-4 sm:px-6 py-3 border-b border-gray-200 bg-white/80 backdrop-blur-sm rounded-t-lg mb-6">
       {/* Left: Logo + title */}
       <button
         onClick={onGoHome}

@@ -280,11 +280,14 @@
   display: flex;
   flex-direction: row;
   align-items: center;
+  gap: 10px;
+  min-width: 0;
   position: relative;
 }
 
 .guess-input {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   padding: 10px;
   background-color: var(--pokedex-screen-green);
   border: 2px solid var(--pokedex-black);
@@ -391,53 +394,6 @@
   overflow-y: auto; /* Add scroll when needed */
   display: flex;
   flex-direction: column;
-}
-
-/* Mobile responsiveness */
-@media (max-width: 768px) {
-  .pokedex {
-    flex-direction: column;
-    align-items: center;
-    min-height: auto; /* Allow it to size based on content on mobile */
-  }
-
-  .pokedex-left-panel,
-  .pokedex-right-panel {
-    max-width: 100%;
-    height: auto; /* Auto height on mobile */
-    min-height: 500px; /* Still maintain a minimum height */
-  }
-
-  .main-screen {
-    height: 200px;
-    flex-grow: 0; /* Don't grow on mobile */
-  }
-
-  .guesses-container {
-    max-height: 350px; /* Fixed height on mobile */
-    flex-grow: 0; /* Don't grow on mobile */
-  }
-}
-
-@media (max-width: 768px) {
-  .pokedex {
-    flex-direction: column;
-    align-items: center;
-  }
-
-  .pokedex-left-panel,
-  .pokedex-right-panel {
-    max-width: 100%;
-  }
-
-  .main-screen {
-    height: 200px;
-  }
-
-  .pokemon-image {
-    max-width: 150px;
-    max-height: 150px;
-  }
 }
 
 /* HintPanel styles */
@@ -551,8 +507,9 @@
 /* Masterball button styles */
 .masterball-button-container {
   position: relative;
-  display: inline-block;
-  margin-left: 10px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  margin-left: 0;
 }
 
 .masterball-button {
@@ -730,17 +687,21 @@
   .pokedex {
     flex-direction: column;
     align-items: center;
+    min-height: auto;
   }
 
   .pokedex-left-panel,
   .pokedex-right-panel {
     max-width: 100%;
     width: 100%;
+    height: auto;
+    min-height: 500px;
   }
 
   .main-screen {
     height: 250px;
     overflow: hidden;
+    flex-grow: 0;
   }
 
   .pokemon-image {
@@ -754,6 +715,7 @@
 
   .guesses-container {
     max-height: 350px;
+    flex-grow: 0;
   }
 
   /* Enhance mobile specific elements */
@@ -770,6 +732,23 @@
   /* Adjust spacing on mobile */
   .guess-input-container {
     padding: 10px;
+  }
+
+  .guess-form {
+    gap: 8px;
+  }
+
+  .guess-input {
+    min-width: 0;
+  }
+
+  .masterball-button-container {
+    margin-left: 0;
+  }
+
+  .masterball-button {
+    width: 40px;
+    height: 40px;
   }
 
   /* Make the masterball button slightly smaller on mobile */

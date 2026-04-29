@@ -526,6 +526,13 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       pendingPasswordRecovery: false,
     });
     clearAppStorageOnSignOut();
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.clear();
+      }
+    } catch {
+      // Fall back to targeted removals if full localStorage clear is unavailable.
+    }
 
     try {
       let shouldForceClearStorage = false;
