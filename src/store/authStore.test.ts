@@ -229,3 +229,69 @@ describe('authStore stats hydration', () => {
     expect(useAuthStore.getState().stats?.current_streak).toBe(9)
   })
 })
+
+describe('authStore cache lifecycle', () => {
+  beforeEach(() => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co')
+    localStorage.clear()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+    vi.restoreAllMocks()
+  })
+
+  it('clears stale user cache when initialize runs without a session', async () => {
+    localStorage.setItem('wurmple_user_cache', JSON.stringify({
+      userId: 'stale-user',
+      profile: { username: 'Stale' },
+      stats: { current_streak: 99 },
+    }))
+
+    const authAny = supabase.auth as any
+    authAny.getSession = vi.fn().mockResolvedValue({ data: { session: null } })
+    authAny.onAuthStateChange = vi.fn(() => ({
+      data: { subscription: { unsubscribe: vi.fn() } },
+    }))
+
+    await useAuthStore.getState().initialize()
+
+    expect(localStorage.getItem('wurmple_user_cache')).toBeNull()
+  })
+
+  it('writes updated profile cache after avatar update', async () => {
+    useAuthStore.setState({
+      user: { id: 'user-1' } as any,
+      session: { access_token: 'token-1', user: { id: 'user-1' } } as any,
+      profile: {
+        id: 'user-1',
+        username: 'Ash',
+        avatar_config: { avatar_pokemon_id: 1, avatar_is_shiny: false },
+        display_ball: 'poke-ball',
+      },
+      stats: { current_streak: 5 } as any,
+      isGuest: false,
+      isLoading: false,
+    } as any)
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        avatar_config: { avatar_pokemon_id: 25, avatar_is_shiny: true },
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await useAuthStore.getState().updateAvatar({
+      avatar_pokemon_id: 25,
+      avatar_is_shiny: true,
+    })
+
+    expect(result.error).toBeNull()
+    const cached = JSON.parse(localStorage.getItem('wurmple_user_cache') ?? '{}')
+    expect(cached.userId).toBe('user-1')
+    expect(cached.profile?.avatar_config?.avatar_pokemon_id).toBe(25)
+    expect(cached.profile?.avatar_config?.avatar_is_shiny).toBe(true)
+  })
+})

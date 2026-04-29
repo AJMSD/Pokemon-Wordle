@@ -167,6 +167,24 @@ function writeUserCache(userId: string, profile: Profile | null, stats: Stats | 
   }
 }
 
+function clearUserCache() {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem('wurmple_user_cache');
+  } catch {
+    // Ignore cache remove failures (quota/private mode)
+  }
+}
+
+function writeUserCacheFromState(
+  state: Pick<AuthState, 'session' | 'profile' | 'stats'>,
+  expectedUserId?: string,
+) {
+  if (!state.session) return;
+  if (expectedUserId && state.session.user.id !== expectedUserId) return;
+  writeUserCache(state.session.user.id, state.profile, state.stats);
+}
+
 const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   user: null,
   session: null,
@@ -186,6 +204,8 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     set({ isLoading: true });
 
     const applySession = async (session: Session, forcePasswordRecovery: boolean) => {
+      let cachedProfile: Profile | null = null;
+      let cachedStats: Stats | null = null;
       if (forcePasswordRecovery) {
         markRecoveryRequiredForUser(session.user.id);
       }
@@ -197,7 +217,9 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         if (cached) {
           const cachedData = JSON.parse(cached);
           if (cachedData.userId === session.user.id) {
-            set({ profile: cachedData.profile ?? null, stats: cachedData.stats ?? null });
+            cachedProfile = cachedData.profile ?? null;
+            cachedStats = cachedData.stats ?? null;
+            set({ profile: cachedProfile, stats: cachedStats });
           }
         }
       } catch { /* ignore malformed cache */ }
@@ -212,11 +234,13 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         user: session.user,
         session,
         profile: profile ?? null,
+        stats: cachedStats ?? (state.user?.id === session.user.id ? state.stats : null),
         isGuest: false,
         isLoading: false,
         pendingEmail: null,
         pendingPasswordRecovery: forcePasswordRecovery || persistentlyRequired || state.pendingPasswordRecovery,
       }));
+      writeUserCacheFromState(get(), session.user.id);
       void get().fetchMe();
     };
 
@@ -239,7 +263,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
             pendingEmail: null,
             pendingPasswordRecovery: false,
           });
-          localStorage.removeItem('wurmple_user_cache');
+          clearUserCache();
           await resetToFreshGuestGameState('Guest game init after auth session loss failed:');
         }
       });
@@ -251,6 +275,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       if (session) {
         await applySession(session, forcePasswordRecovery);
       } else {
+        clearUserCache();
         set({ isLoading: false });
       }
     } catch (err) {
@@ -330,7 +355,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       pendingEmail: null,
       pendingPasswordRecovery: false,
     });
-    localStorage.removeItem('wurmple_user_cache');
+    clearUserCache();
     await resetToFreshGuestGameState('Guest game init after sign-out failed:');
 
     try {
@@ -389,6 +414,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         ? { ...state.profile, avatar_config: { ...state.profile.avatar_config, ...config } }
         : null,
     }));
+    writeUserCacheFromState(get(), session.user.id);
 
     try {
       const res = await fetch(`${base}/functions/v1/update-profile`, {
@@ -399,6 +425,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
 
       if (!res.ok) {
         set({ profile: prevProfile });
+        writeUserCacheFromState(get(), session.user.id);
         const d = await res.json().catch(() => ({}));
         return { error: d.error ?? "Couldn't update your Trainer avatar. Try again." };
       }
@@ -407,9 +434,11 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       set(state => ({
         profile: state.profile ? { ...state.profile, avatar_config: d.avatar_config } : null,
       }));
+      writeUserCacheFromState(get(), session.user.id);
       return { error: null };
     } catch {
       set({ profile: prevProfile });
+      writeUserCacheFromState(get(), session.user.id);
       return { error: 'Connection lost. Check your signal and try again.' };
     }
   },
@@ -565,6 +594,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         .maybeSingle();
 
       set({ profile: profile ?? null });
+      writeUserCacheFromState(get(), session.user.id);
       return { error: null };
     } catch {
       return { error: "Couldn't save your Trainer name. Try again." };

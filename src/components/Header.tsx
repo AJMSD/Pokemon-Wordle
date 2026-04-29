@@ -89,7 +89,7 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
                 <img
                   src={avatarUrl}
                   alt="Trainer avatar"
-                  className="w-8 h-8 rounded-full object-cover border border-gray-200 bg-white"
+                  className="w-8 h-8 rounded-full object-cover border border-gray-200"
                   loading="lazy"
                   decoding="async"
                   width={32}
