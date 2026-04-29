@@ -183,13 +183,15 @@ function App() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 bg-white/50 backdrop-blur-sm rounded-lg shadow-lg my-4">
       <OfflineBanner />
-      <Header
-        onShowCollection={!isGuest ? () => { setShowCollection(true); setShowProfile(false) } : undefined}
-        onShowProfile={!isGuest ? () => { setShowProfile(true); setShowCollection(false) } : undefined}
-        onShowAuth={() => { setAuthInitialView('login'); setShowAuth(true) }}
-        onGoHome={() => { setShowCollection(false); setShowProfile(false) }}
-        onSignOut={handleSignOut}
-      />
+      {(showCollection || showProfile) && (
+        <Header
+          onShowCollection={!isGuest ? () => { setShowCollection(true); setShowProfile(false) } : undefined}
+          onShowProfile={!isGuest ? () => { setShowProfile(true); setShowCollection(false) } : undefined}
+          onShowAuth={() => { setAuthInitialView('login'); setShowAuth(true) }}
+          onGoHome={() => { setShowCollection(false); setShowProfile(false) }}
+          onSignOut={handleSignOut}
+        />
+      )}
       {showUnverifiedBanner && (
         <div className="flex items-center justify-between bg-yellow-50 border border-yellow-300 text-yellow-800 text-sm rounded-lg px-4 py-3 mb-4 gap-4">
           <span>

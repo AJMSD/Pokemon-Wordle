@@ -738,6 +738,14 @@
 
 /* Mobile responsiveness updated */
 @media (max-width: 768px) {
+  body {
+    justify-content: flex-start;
+  }
+
+  .game-container {
+    justify-content: flex-start;
+  }
+
   .pokedex {
     flex-direction: column;
     align-items: center;
