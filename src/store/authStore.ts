@@ -22,6 +22,7 @@ interface Profile {
   username: string;
   avatar_config: AvatarConfig;
   display_ball: string;
+  tier_prompt_dismissed_forever?: boolean;
 }
 
 interface Stats {
@@ -74,6 +75,7 @@ interface AuthActions {
   updateAvatar: (config: Partial<AvatarConfig>) => Promise<{ error: string | null }>;
   fetchMe: () => Promise<{ error: string | null }>;
   updateDisplayBall: (ballId: string) => Promise<{ error: string | null }>;
+  dismissTierPromptForever: () => Promise<{ error: string | null }>;
   setupUsername: (username: string) => Promise<{ error: string | null }>;
   clearPasswordRecovery: () => void;
 }
@@ -709,6 +711,45 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         },
       }));
       return { error: "Couldn't update your display ball. Try again." };
+    }
+  },
+
+  dismissTierPromptForever: async () => {
+    const { session } = get();
+    if (!session) return { error: "You're not signed in, Trainer." };
+
+    const previousProfile = get().profile;
+    set(state => ({
+      profile: state.profile
+        ? { ...state.profile, tier_prompt_dismissed_forever: true }
+        : null,
+    }));
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    try {
+      const res = await fetch(`${supabaseUrl}/functions/v1/dismiss-tier-prompt`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        set({ profile: previousProfile });
+        return { error: data.error ?? "Couldn't save this preference. Try again." };
+      }
+
+      set(state => ({
+        profile: state.profile
+          ? { ...state.profile, tier_prompt_dismissed_forever: true }
+          : null,
+      }));
+      writeUserCacheFromState(get(), session.user.id);
+      return { error: null };
+    } catch {
+      set({ profile: previousProfile });
+      return { error: 'Connection lost. Check your signal and try again.' };
     }
   },
 

@@ -43,6 +43,7 @@ function App() {
   const gameStatus = useGameStore(state => state.gameStatus)
   const initialize = useAuthStore(state => state.initialize)
   const updateDisplayBall = useAuthStore(state => state.updateDisplayBall)
+  const dismissTierPromptForever = useAuthStore(state => state.dismissTierPromptForever)
   const resendVerification = useAuthStore(state => state.resendVerification)
   const signOut = useAuthStore(state => state.signOut)
   const isGuest = useAuthStore(state => state.isGuest)
@@ -116,10 +117,10 @@ function App() {
 
   useEffect(() => {
     if (isGuest || !stats || !profile) return
+    if (profile.tier_prompt_dismissed_forever) return
     const currentTier = getStreakTier(stats.current_streak)
     if (TIER_ORDER.indexOf(currentTier) > TIER_ORDER.indexOf(profile.display_ball ?? 'poke-ball')) {
-      const dismissed = localStorage.getItem('tier_prompt_dismissed')
-      if (dismissed !== currentTier) setTierUpgrade({ tierId: currentTier, tierName: BALL_NAMES[currentTier] })
+      setTierUpgrade({ tierId: currentTier, tierName: BALL_NAMES[currentTier] })
     }
   }, [stats, profile, isGuest])
 
@@ -199,7 +200,11 @@ function App() {
             setTierUpgrade(null)
           }}
           onDismiss={() => {
-            localStorage.setItem('tier_prompt_dismissed', tierUpgrade.tierId)
+            if (isGuest) {
+              localStorage.setItem('tier_prompt_dismissed', tierUpgrade.tierId)
+            } else {
+              void dismissTierPromptForever()
+            }
             setTierUpgrade(null)
           }}
         />

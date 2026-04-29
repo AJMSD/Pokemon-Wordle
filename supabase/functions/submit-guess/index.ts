@@ -33,13 +33,42 @@ function normalizeName(name: string): string {
     );
 }
 
-async function isValidPokemon(name: string): Promise<boolean> {
+let pokemonAllowlistPromise: Promise<Set<string> | null> | null = null;
+
+async function loadPokemonAllowlist(): Promise<Set<string> | null> {
   try {
-    const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${name}`);
-    return res.ok;
+    const res = await fetch('https://pokeapi.co/api/v2/pokemon?limit=1025');
+    if (!res.ok) return null;
+    const data = await res.json();
+    const names = Array.isArray(data?.results)
+      ? data.results
+          .map((entry: { name?: string }) => normalizeName(entry?.name ?? ''))
+          .filter(Boolean)
+      : [];
+    return new Set(names);
   } catch {
-    return false;
+    return null;
   }
+}
+
+async function getPokemonAllowlist(): Promise<Set<string> | null> {
+  if (!pokemonAllowlistPromise) {
+    pokemonAllowlistPromise = loadPokemonAllowlist();
+  }
+
+  const allowlist = await pokemonAllowlistPromise;
+  if (!allowlist) {
+    // Retry on later request when the warmup fetch fails.
+    pokemonAllowlistPromise = null;
+  }
+  return allowlist;
+}
+
+async function isValidPokemon(name: string): Promise<boolean> {
+  const allowlist = await getPokemonAllowlist();
+  // Don't reject valid guesses due to upstream list outages.
+  if (!allowlist) return true;
+  return allowlist.has(name);
 }
 
 function getTodayJST(): string {

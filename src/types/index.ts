@@ -56,6 +56,7 @@ export interface GameState {
   rateLimitUntil: number | null;
   newlyUnlockedBalls: string[];
   rejectedGuess: string | null;
+  pendingGuess: string | null;
 }
 
 export interface GameActions {

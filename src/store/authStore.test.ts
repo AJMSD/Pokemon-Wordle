@@ -91,6 +91,21 @@ describe('authStore display ball sync', () => {
     const cached = JSON.parse(localStorage.getItem('wurmple_user_cache') ?? '{}')
     expect(cached.profile?.display_ball).toBe('quick-ball')
   })
+
+  it('persists tier prompt dismissal and caches the profile flag', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ tier_prompt_dismissed_forever: true }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await useAuthStore.getState().dismissTierPromptForever()
+    expect(result.error).toBeNull()
+    expect(useAuthStore.getState().profile?.tier_prompt_dismissed_forever).toBe(true)
+
+    const cached = JSON.parse(localStorage.getItem('wurmple_user_cache') ?? '{}')
+    expect(cached.profile?.tier_prompt_dismissed_forever).toBe(true)
+  })
 })
 
 describe('authStore stats hydration', () => {

@@ -844,6 +844,11 @@ header h1 {
   border: 1px solid #4a4a4a;
 }
 
+.letter-block.pending {
+  background-color: #8a8a8a;
+  border: 1px solid #6f6f6f;
+}
+
 /* Mobile responsiveness for letter blocks */
 @media (max-width: 768px) {
   .letter-block {

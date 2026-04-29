@@ -47,7 +47,7 @@ Deno.serve(async (req: Request) => {
     userId = user.id;
 
     const [profileResult, statsResult] = await Promise.all([
-      supabaseAdmin.from('profiles').select('username, avatar_config, display_ball').eq('id', userId).single(),
+      supabaseAdmin.from('profiles').select('username, avatar_config, display_ball, tier_prompt_dismissed_forever').eq('id', userId).single(),
       supabaseAdmin.from('user_stats').select('*').eq('user_id', userId).single(),
     ]);
 
@@ -100,6 +100,7 @@ Deno.serve(async (req: Request) => {
           username: profile.username,
           avatar_config: profile.avatar_config ?? {},
           display_ball: profile.display_ball,
+          tier_prompt_dismissed_forever: Boolean(profile.tier_prompt_dismissed_forever),
         },
         stats: {
           current_streak: stats?.current_streak ?? 0,

@@ -2,16 +2,13 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { checkRateLimit } from '../_shared/rateLimit.ts';
 
-const BLOCKED = ['fuck', 'shit', 'bitch', 'cunt', 'nigger', 'faggot', 'retard'];
-const USERNAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_]{1,18}[a-zA-Z0-9]$|^[a-zA-Z0-9]{3}$/;
-
 Deno.serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
 
   const start = Date.now();
 
-  if (req.method !== 'POST') {
+  if (req.method !== 'PATCH') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
       status: 405,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -46,7 +43,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const rateLimit = await checkRateLimit(supabaseAdmin, `create-profile:user:${user.id}`, 5, 3600);
+    const rateLimit = await checkRateLimit(supabaseAdmin, `dismiss-tier-prompt:user:${user.id}`, 20, 60);
     if (!rateLimit.allowed) {
       return new Response(
         JSON.stringify({ error: 'Rate limit exceeded', retry_after: rateLimit.retryAfter }),
@@ -57,57 +54,33 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const body = await req.json();
-    const username: string = (body.username ?? '').trim();
+    const { data: updatedProfile, error: updateError } = await supabaseAdmin
+      .from('profiles')
+      .update({ tier_prompt_dismissed_forever: true })
+      .eq('id', user.id)
+      .select('id')
+      .maybeSingle();
 
-    if (username.length < 3 || username.length > 20) {
-      return new Response(JSON.stringify({ error: 'Username must be 3–20 characters' }), {
-        status: 400,
+    if (updateError) throw updateError;
+
+    if (!updatedProfile) {
+      return new Response(JSON.stringify({ error: 'Profile not found' }), {
+        status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    if (!USERNAME_RE.test(username)) {
-      return new Response(
-        JSON.stringify({ error: 'Username may only contain letters, numbers, and underscores' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    console.log(JSON.stringify({ fn: 'dismiss-tier-prompt', method: req.method, user_id: user.id, status: 200, duration_ms: Date.now() - start }));
 
-    const lower = username.toLowerCase();
-    if (BLOCKED.some(w => lower.includes(w))) {
-      return new Response(JSON.stringify({ error: 'Username not allowed' }), {
-        status: 400,
+    return new Response(
+      JSON.stringify({ tier_prompt_dismissed_forever: true }),
+      {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const { error: insertError } = await supabaseAdmin.from('profiles').insert({
-      id: user.id,
-      username,
-      display_ball: 'poke-ball',
-      tier_prompt_dismissed_forever: false,
-    });
-
-    if (insertError) {
-      const isUnique = insertError.code === '23505' || insertError.message?.includes('unique');
-      if (isUnique) {
-        return new Response(JSON.stringify({ error: 'Username already taken' }), {
-          status: 409,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
       }
-      throw insertError;
-    }
-
-    console.log(JSON.stringify({ fn: 'create-profile', method: req.method, user_id: user.id, status: 200, duration_ms: Date.now() - start }));
-
-    return new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    );
   } catch (err) {
-    console.error(JSON.stringify({ fn: 'create-profile', error: String(err), status: 500 }));
+    console.error(JSON.stringify({ fn: 'dismiss-tier-prompt', error: String(err), status: 500 }));
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
