@@ -3,6 +3,7 @@ import { Archive, LogIn, LogOut } from 'lucide-react'
 import { useAuthStore, BALL_NAMES } from '../store/authStore'
 import { getAvatarUrl } from '../utils/avatarUtils'
 import DefaultAvatar from './DefaultAvatar'
+import streakIcon from '../../streak.png'
 
 interface HeaderProps {
   onShowCollection?: () => void
@@ -58,7 +59,7 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
           {!isGuest && stats !== null && (
             <span className="font-pixel text-sm text-gray-600 inline-flex items-center gap-1">
               <img
-                src={`${import.meta.env.BASE_URL}streak.png`}
+                src={streakIcon}
                 alt="Streak"
                 className="w-4 h-4 object-contain"
                 loading="lazy"
