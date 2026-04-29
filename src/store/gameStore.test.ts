@@ -49,7 +49,11 @@ describe('gameStore authenticated submit flow', () => {
     expect(useGameStore.getState().pendingGuess).toBe('pikachu')
     expect(useGameStore.getState().guesses).toEqual([])
 
-    resolveFetch?.({
+    expect(resolveFetch).not.toBeNull()
+    if (!resolveFetch) {
+      throw new Error('Fetch resolver was not initialized')
+    }
+    resolveFetch({
       ok: true,
       json: async () => ({
         guesses: ['pikachu'],
