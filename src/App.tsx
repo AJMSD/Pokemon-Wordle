@@ -50,6 +50,8 @@ function App() {
   const profile = useAuthStore(state => state.profile)
   const user = useAuthStore(state => state.user)
   const pendingPasswordRecovery = useAuthStore(state => state.pendingPasswordRecovery)
+  const hasResolvedProfile = useAuthStore(state => state.hasResolvedProfile)
+  const isProfileHydrating = useAuthStore(state => state.isProfileHydrating)
   const stats = useAuthStore(state => state.stats)
 
   const { toasts, removeToast, addToast } = useToast()
@@ -100,7 +102,11 @@ function App() {
     return () => clearTimeout(t)
   }, [gameStatus, isGuest, stats?.current_streak, addToast])
 
-  const needsUsernameSetup = !isGuest && !!session && !profile
+  const needsUsernameSetup = !isGuest
+    && !!session
+    && hasResolvedProfile
+    && !isProfileHydrating
+    && !profile
   const showUnverifiedBanner = !isGuest && !!session && !user?.email_confirmed_at && !bannerDismissed
 
   const typedToasts = toasts.map(toast => ({

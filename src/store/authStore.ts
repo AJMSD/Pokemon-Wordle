@@ -42,6 +42,8 @@ interface AuthState {
   session: Session | null;
   profile: Profile | null;
   stats: Stats | null;
+  hasResolvedProfile: boolean;
+  isProfileHydrating: boolean;
   displayBallSync: {
     inFlight: boolean;
     pendingBallId: string | null;
@@ -73,6 +75,7 @@ let fetchMeInFlight: { token: string; promise: Promise<{ error: string | null }>
 let passwordResetInFlight: Promise<{ error: string | null }> | null = null;
 let authInitInFlight: Promise<void> | null = null;
 let authListenerUnsubscribe: (() => void) | null = null;
+let authSessionEpoch = 0;
 const RECOVERY_PENDING_USER_KEY = 'wurmple_recovery_pending_user_id';
 
 function readRecoveryPendingUserId() {
@@ -193,6 +196,8 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   session: null,
   profile: null,
   stats: null,
+  hasResolvedProfile: false,
+  isProfileHydrating: false,
   displayBallSync: {
     inFlight: false,
     pendingBallId: null,
@@ -212,6 +217,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       set({ isLoading: true });
 
       const applySession = async (session: Session, forcePasswordRecovery: boolean) => {
+        const sessionEpoch = ++authSessionEpoch;
         let cachedProfile: Profile | null = null;
         let cachedStats: Stats | null = null;
         if (forcePasswordRecovery) {
@@ -219,6 +225,17 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         }
         const persistentlyRequired = isRecoveryRequiredForUser(session.user.id);
         const isRecoverySession = forcePasswordRecovery || persistentlyRequired;
+
+        set(state => ({
+          user: session.user,
+          session,
+          isGuest: false,
+          isLoading: false,
+          pendingEmail: null,
+          pendingPasswordRecovery: isRecoverySession || state.pendingPasswordRecovery,
+          hasResolvedProfile: isRecoverySession,
+          isProfileHydrating: !isRecoverySession,
+        }));
 
         // Apply cached profile/stats immediately for instant display
         try {
@@ -228,7 +245,9 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
             if (cachedData.userId === session.user.id) {
               cachedProfile = cachedData.profile ?? null;
               cachedStats = cachedData.stats ?? null;
-              set({ profile: cachedProfile, stats: cachedStats });
+              if (authSessionEpoch === sessionEpoch) {
+                set({ profile: cachedProfile, stats: cachedStats });
+              }
             }
           }
         } catch { /* ignore malformed cache */ }
@@ -243,6 +262,10 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
           profile = data ?? null;
         }
 
+        if (authSessionEpoch !== sessionEpoch) {
+          return;
+        }
+
         set(state => ({
           user: session.user,
           session,
@@ -254,6 +277,8 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
           isLoading: false,
           pendingEmail: null,
           pendingPasswordRecovery: isRecoverySession || state.pendingPasswordRecovery,
+          hasResolvedProfile: true,
+          isProfileHydrating: false,
         }));
         writeUserCacheFromState(get(), session.user.id);
         if (!isRecoverySession) {
@@ -272,11 +297,15 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
           if (session) {
             await applySession(session, forcePasswordRecovery);
           } else {
+            authSessionEpoch += 1;
+            fetchMeInFlight = null;
             set({
               user: null,
               session: null,
               profile: null,
               stats: null,
+              hasResolvedProfile: false,
+              isProfileHydrating: false,
               displayBallSync: { inFlight: false, pendingBallId: null, requestId: 0 },
               isGuest: true,
               pendingEmail: null,
@@ -298,11 +327,12 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         if (session) {
           await applySession(session, forcePasswordRecovery);
         } else {
-          set({ isLoading: false });
+          authSessionEpoch += 1;
+          set({ isLoading: false, hasResolvedProfile: false, isProfileHydrating: false });
         }
       } catch (err) {
         console.error('Auth init failed:', err);
-        set({ isLoading: false });
+        set({ isLoading: false, isProfileHydrating: false });
       } finally {
         authInitInFlight = null;
       }
@@ -372,11 +402,15 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   },
 
   signOut: async () => {
+    authSessionEpoch += 1;
+    fetchMeInFlight = null;
     set({
       user: null,
       session: null,
       profile: null,
       stats: null,
+      hasResolvedProfile: false,
+      isProfileHydrating: false,
       displayBallSync: { inFlight: false, pendingBallId: null, requestId: 0 },
       isGuest: true,
       pendingEmail: null,
@@ -650,7 +684,14 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         body: JSON.stringify({ username }),
       });
       const data = await res.json();
-      if (!res.ok) return { error: data.error ?? "Couldn't save your Trainer name. Try again." };
+      if (!res.ok) {
+        const message = String(data?.error ?? '');
+        const duplicateForCurrentUser = res.status === 409
+          && (message.toLowerCase().includes('taken') || message.toLowerCase().includes('exists'));
+        if (!duplicateForCurrentUser) {
+          return { error: data.error ?? "Couldn't save your Trainer name. Try again." };
+        }
+      }
 
       const { data: profile } = await supabase
         .from('profiles')
@@ -658,8 +699,15 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         .eq('id', session.user.id)
         .maybeSingle();
 
-      set({ profile: profile ?? null });
+      set({
+        profile: profile ?? null,
+        hasResolvedProfile: true,
+        isProfileHydrating: false,
+      });
       writeUserCacheFromState(get(), session.user.id);
+      if (!profile) {
+        return { error: "Couldn't load your Trainer profile yet. Please try again." };
+      }
       return { error: null };
     } catch {
       return { error: "Couldn't save your Trainer name. Try again." };
