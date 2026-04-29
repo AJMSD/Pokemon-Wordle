@@ -286,8 +286,9 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
           }
         });
         const subscription = (authStateChangeResult as { data?: { subscription?: { unsubscribe?: () => void } } } | undefined)?.data?.subscription;
-        authListenerUnsubscribe = typeof subscription?.unsubscribe === 'function'
-          ? () => subscription.unsubscribe()
+        const unsubscribe = subscription?.unsubscribe;
+        authListenerUnsubscribe = typeof unsubscribe === 'function'
+          ? () => unsubscribe()
           : null;
 
         const recoveryFromUrl = getRecoveryContextFromUrl();
