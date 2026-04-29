@@ -35,6 +35,45 @@ const STREAK_MILESTONES: Record<number, string> = {
   100: "👑 100-day streak! You are a Pokémon Master!",
 }
 
+const STREAK_TOAST_SEEN_STORAGE_KEY = 'streak_milestone_toasts_seen_v1'
+
+type SeenStreakMilestones = Record<string, true>
+
+function getSeenStreakMilestones(): SeenStreakMilestones {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = localStorage.getItem(STREAK_TOAST_SEEN_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object') {
+      return parsed as SeenStreakMilestones
+    }
+  } catch {
+    // Ignore malformed storage and fall back to an empty seen map.
+  }
+  return {}
+}
+
+function getStreakToastSeenKey(userId: string | undefined, streak: number): string {
+  return `${userId ?? 'anonymous'}:${streak}`
+}
+
+function hasSeenStreakToast(userId: string | undefined, streak: number): boolean {
+  const seen = getSeenStreakMilestones()
+  return Boolean(seen[getStreakToastSeenKey(userId, streak)])
+}
+
+function markStreakToastSeen(userId: string | undefined, streak: number): void {
+  if (typeof window === 'undefined') return
+  try {
+    const seen = getSeenStreakMilestones()
+    seen[getStreakToastSeenKey(userId, streak)] = true
+    localStorage.setItem(STREAK_TOAST_SEEN_STORAGE_KEY, JSON.stringify(seen))
+  } catch {
+    // Ignore write failures so gameplay is never blocked by storage.
+  }
+}
+
 function App() {
   const initializeGame = useGameStore(state => state.initializeGame)
   const initializeServerSession = useGameStore(state => state.initializeServerSession)
@@ -96,12 +135,17 @@ function App() {
     if (gameStatus !== 'won' || isGuest || milestoneShownRef.current) return
     const streak = stats?.current_streak
     if (!streak || !STREAK_MILESTONES[streak]) return
+    if (hasSeenStreakToast(user?.id, streak)) {
+      milestoneShownRef.current = true
+      return
+    }
     milestoneShownRef.current = true
+    markStreakToastSeen(user?.id, streak)
     const t = setTimeout(() => {
       addToast(STREAK_MILESTONES[streak], 'success')
     }, 1500)
     return () => clearTimeout(t)
-  }, [gameStatus, isGuest, stats?.current_streak, addToast])
+  }, [gameStatus, isGuest, stats?.current_streak, user?.id, addToast])
 
   const needsUsernameSetup = !isGuest
     && !!session
