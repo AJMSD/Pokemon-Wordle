@@ -27,7 +27,7 @@ function PageSkeleton() {
 }
 
 const STREAK_MILESTONES: Record<number, string> = {
-  3: "🔥 3-day streak! You're on a roll, Trainer!",
+  3: "3-day streak! You're on a roll, Trainer!",
   7: '⚡ 7-day streak! A full week of victories!',
   14: '💪 14-day streak! Two weeks strong!',
   30: '🌟 30-day streak! Legendary Trainer territory!',

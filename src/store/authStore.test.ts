@@ -242,7 +242,7 @@ describe('authStore cache lifecycle', () => {
     vi.restoreAllMocks()
   })
 
-  it('clears stale user cache when initialize runs without a session', async () => {
+  it('retains cached user cache when initialize runs without a session', async () => {
     localStorage.setItem('wurmple_user_cache', JSON.stringify({
       userId: 'stale-user',
       profile: { username: 'Stale' },
@@ -257,7 +257,7 @@ describe('authStore cache lifecycle', () => {
 
     await useAuthStore.getState().initialize()
 
-    expect(localStorage.getItem('wurmple_user_cache')).toBeNull()
+    expect(localStorage.getItem('wurmple_user_cache')).not.toBeNull()
   })
 
   it('writes updated profile cache after avatar update', async () => {
@@ -293,5 +293,34 @@ describe('authStore cache lifecycle', () => {
     expect(cached.userId).toBe('user-1')
     expect(cached.profile?.avatar_config?.avatar_pokemon_id).toBe(25)
     expect(cached.profile?.avatar_config?.avatar_is_shiny).toBe(true)
+  })
+
+  it('clears user cache on explicit sign-out', async () => {
+    localStorage.setItem('wurmple_user_cache', JSON.stringify({
+      userId: 'user-1',
+      profile: { username: 'Ash' },
+      stats: { current_streak: 7 },
+    }))
+
+    useAuthStore.setState({
+      user: { id: 'user-1' } as any,
+      session: { access_token: 'token-1', user: { id: 'user-1' } } as any,
+      profile: {
+        id: 'user-1',
+        username: 'Ash',
+        avatar_config: {},
+        display_ball: 'poke-ball',
+      },
+      stats: null,
+      isGuest: false,
+      isLoading: false,
+    } as any)
+
+    const authAny = supabase.auth as any
+    authAny.signOut = vi.fn().mockResolvedValue(undefined)
+
+    await useAuthStore.getState().signOut()
+
+    expect(localStorage.getItem('wurmple_user_cache')).toBeNull()
   })
 })

@@ -263,7 +263,6 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
             pendingEmail: null,
             pendingPasswordRecovery: false,
           });
-          clearUserCache();
           await resetToFreshGuestGameState('Guest game init after auth session loss failed:');
         }
       });
@@ -275,7 +274,6 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       if (session) {
         await applySession(session, forcePasswordRecovery);
       } else {
-        clearUserCache();
         set({ isLoading: false });
       }
     } catch (err) {

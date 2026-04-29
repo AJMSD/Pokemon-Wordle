@@ -56,7 +56,18 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
             height={24}
           />
           {!isGuest && stats !== null && (
-            <span className="font-pixel text-sm text-gray-600">🔥{stats.current_streak}</span>
+            <span className="font-pixel text-sm text-gray-600 inline-flex items-center gap-1">
+              <img
+                src={`${import.meta.env.BASE_URL}streak.png`}
+                alt="Streak"
+                className="w-4 h-4 object-contain"
+                loading="lazy"
+                decoding="async"
+                width={16}
+                height={16}
+              />
+              {stats.current_streak}
+            </span>
           )}
           {isGuest && (
             <span className="font-pixel text-sm font-medium text-gray-600">Guest</span>
