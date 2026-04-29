@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { supabase } from '../lib/supabase';
+import { clearSupabaseAuthStorage, supabase } from '../lib/supabase';
 import { isJsonEqual, readJsonCache, removeCacheKey, removeCacheKeysByPrefix, writeJsonCache } from '../lib/cache';
 import { useGameStore } from './gameStore';
 import type { User, Session } from '../lib/supabase';
@@ -89,6 +89,7 @@ let authSessionEpoch = 0;
 let signInAttemptCounter = 0;
 let lastStartedSignInAttemptId: number | null = null;
 let timedOutSignInAttemptId: number | null = null;
+let isSigningOut = false;
 const USER_CACHE_KEY = 'wurmple_user_cache';
 const RECOVERY_PENDING_USER_KEY = 'wurmple_recovery_pending_user_id';
 const APP_STORAGE_KEYS_TO_CLEAR_ON_SIGNOUT = [
@@ -376,6 +377,9 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
           const forcePasswordRecovery = recoveryFromEvent || (recoveryFromUrl.isRecovery && recoveryFromUrl.hasAuthToken);
 
           if (session) {
+            if (isSigningOut) {
+              return;
+            }
             if (event === 'SIGNED_IN') {
               timedOutSignInAttemptId = null;
               lastStartedSignInAttemptId = null;
@@ -503,6 +507,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   },
 
   signOut: async () => {
+    isSigningOut = true;
     const signOutEpoch = ++authSessionEpoch;
     timedOutSignInAttemptId = null;
     lastStartedSignInAttemptId = null;
@@ -523,16 +528,37 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     clearAppStorageOnSignOut();
 
     try {
-      await supabase.auth.signOut({ scope: 'local' });
-    } catch (err) {
-      console.warn('Supabase sign-out failed (local state already cleared):', err);
-    }
+      let shouldForceClearStorage = false;
+      try {
+        await supabase.auth.signOut({ scope: 'local' });
+      } catch (err) {
+        shouldForceClearStorage = true;
+        console.warn('Supabase sign-out failed (local state already cleared):', err);
+      }
 
-    if (authSessionEpoch !== signOutEpoch) {
-      return;
-    }
+      if (shouldForceClearStorage) {
+        clearSupabaseAuthStorage();
+      }
 
-    await resetToFreshGuestGameState('Guest game init after sign-out failed:');
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          clearSupabaseAuthStorage();
+        }
+      } catch (err) {
+        // If session check fails, force-clear as a safety net.
+        clearSupabaseAuthStorage();
+        console.warn('Supabase session verification after sign-out failed:', err);
+      }
+
+      if (authSessionEpoch !== signOutEpoch) {
+        return;
+      }
+
+      await resetToFreshGuestGameState('Guest game init after sign-out failed:');
+    } finally {
+      isSigningOut = false;
+    }
   },
 
   sendPasswordReset: async (email) => {

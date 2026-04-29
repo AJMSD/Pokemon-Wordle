@@ -38,7 +38,7 @@ test.describe('Auth flows', () => {
     await expect(page.getByText(/reset.*sent|check your email/i)).toBeVisible({ timeout: 10000 })
   })
 
-  test('sign out immediately returns guest header state', async ({ page }) => {
+  test('sign out persists after refresh and keeps protected actions gated', async ({ page }) => {
     const email = process.env.E2E_AUTH_EMAIL
     const password = process.env.E2E_AUTH_PASSWORD
     test.skip(!email || !password, 'Set E2E_AUTH_EMAIL and E2E_AUTH_PASSWORD to run authenticated sign-out regression')
@@ -55,5 +55,16 @@ test.describe('Auth flows', () => {
 
     await expect(page.getByRole('button', { name: /^sign in$/i })).toBeVisible({ timeout: 2000 })
     await expect(page.getByRole('button', { name: /sign out/i })).toBeHidden()
+    await expect(page.getByRole('button', { name: /profile/i })).toBeHidden()
+
+    await page.reload()
+
+    await expect(page.getByRole('button', { name: /^sign in$/i })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole('button', { name: /sign out/i })).toBeHidden()
+    await expect(page.getByRole('button', { name: /profile/i })).toBeHidden()
+    await expect(page.getByRole('button', { name: /collection/i })).toBeHidden()
+
+    await page.getByRole('button', { name: /^sign in$/i }).click()
+    await expect(page.getByRole('button', { name: /forgot password/i })).toBeVisible({ timeout: 5000 })
   })
 })
