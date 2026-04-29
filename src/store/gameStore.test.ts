@@ -36,9 +36,9 @@ describe('gameStore authenticated submit flow', () => {
   })
 
   it('uses pendingGuess while submitting and commits guesses only after success', async () => {
-    let resolveFetch: ((value: any) => void) | null = null
+    const resolver: { current: ((value: any) => void) | null } = { current: null }
     const fetchPromise = new Promise<any>((resolve) => {
-      resolveFetch = resolve
+      resolver.current = resolve
     })
     const fetchMock = vi.fn().mockImplementation(() => fetchPromise)
     vi.stubGlobal('fetch', fetchMock)
@@ -49,11 +49,11 @@ describe('gameStore authenticated submit flow', () => {
     expect(useGameStore.getState().pendingGuess).toBe('pikachu')
     expect(useGameStore.getState().guesses).toEqual([])
 
-    expect(resolveFetch).not.toBeNull()
-    if (!resolveFetch) {
+    expect(resolver.current).not.toBeNull()
+    if (!resolver.current) {
       throw new Error('Fetch resolver was not initialized')
     }
-    resolveFetch({
+    resolver.current({
       ok: true,
       json: async () => ({
         guesses: ['pikachu'],
