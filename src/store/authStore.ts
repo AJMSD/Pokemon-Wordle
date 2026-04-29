@@ -92,6 +92,7 @@ let timedOutSignInAttemptId: number | null = null;
 let isSigningOut = false;
 const USER_CACHE_KEY = 'wurmple_user_cache';
 const RECOVERY_PENDING_USER_KEY = 'wurmple_recovery_pending_user_id';
+const SIGNED_OUT_FLAG_KEY = 'wurmple_signed_out';
 const APP_STORAGE_KEYS_TO_CLEAR_ON_SIGNOUT = [
   USER_CACHE_KEY,
   RECOVERY_PENDING_USER_KEY,
@@ -189,6 +190,28 @@ function writeUserCache(userId: string, profile: Profile | null, stats: Stats | 
 function clearAppStorageOnSignOut() {
   APP_STORAGE_KEYS_TO_CLEAR_ON_SIGNOUT.forEach(removeCacheKey);
   removeCacheKeysByPrefix([...APP_STORAGE_PREFIXES_TO_CLEAR_ON_SIGNOUT]);
+}
+
+function setSignedOutFlag() {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(SIGNED_OUT_FLAG_KEY, '1');
+  } catch {
+    // Ignore storage write failures
+  }
+}
+
+function clearSignedOutFlag() {
+  removeCacheKey(SIGNED_OUT_FLAG_KEY);
+}
+
+function wasExplicitlySignedOut() {
+  if (typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem(SIGNED_OUT_FLAG_KEY) === '1';
+  } catch {
+    return false;
+  }
 }
 
 function writeUserCacheFromState(
@@ -378,10 +401,33 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
           const forcePasswordRecovery = recoveryFromEvent || (recoveryFromUrl.isRecovery && recoveryFromUrl.hasAuthToken);
 
           if (session) {
+            if (
+              (event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED')
+              && wasExplicitlySignedOut()
+            ) {
+              useGameStore.getState().invalidateServerSessionSync();
+              useGameStore.getState().setStorageScope(null);
+              authSessionEpoch += 1;
+              fetchMeInFlight = null;
+              set({
+                ...getGuestAuthState(),
+                isLoading: false,
+              });
+              try {
+                await supabase.auth.signOut({ scope: 'local' });
+              } catch (err) {
+                console.warn('Local sign-out after stale restored session failed:', err);
+              }
+              clearSupabaseAuthStorage();
+              await resetToFreshGuestGameState('Guest game init after stale restored session failed:');
+              return;
+            }
+
             if (isSigningOut) {
               return;
             }
             if (event === 'SIGNED_IN') {
+              clearSignedOutFlag();
               timedOutSignInAttemptId = null;
               lastStartedSignInAttemptId = null;
             }
@@ -407,7 +453,17 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         const { data: { session } } = await supabase.auth.getSession();
         const forcePasswordRecovery = recoveryFromUrl.isRecovery && recoveryFromUrl.hasAuthToken;
 
-        if (session) {
+        if (session && wasExplicitlySignedOut()) {
+          try {
+            await supabase.auth.signOut({ scope: 'local' });
+          } catch (err) {
+            console.warn('Local sign-out during init stale session cleanup failed:', err);
+          }
+          clearSupabaseAuthStorage();
+          useGameStore.getState().setStorageScope(null);
+          authSessionEpoch += 1;
+          set({ isLoading: false, hasResolvedProfile: false, isProfileHydrating: false });
+        } else if (session) {
           await applySession(session, forcePasswordRecovery);
         } else {
           useGameStore.getState().setStorageScope(null);
@@ -477,12 +533,14 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       if (!res.ok) return { error: data.error ?? "Couldn't register your Trainer Card. Try again." };
     }
 
+    clearSignedOutFlag();
     return { error: null };
   },
 
   signIn: async (email, password) => {
     const attemptId = ++signInAttemptCounter;
     lastStartedSignInAttemptId = attemptId;
+    clearSignedOutFlag();
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error && lastStartedSignInAttemptId === attemptId) {
       lastStartedSignInAttemptId = null;
@@ -513,11 +571,15 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   signOut: async () => {
     isSigningOut = true;
     const signOutEpoch = ++authSessionEpoch;
+    const userId = get().user?.id ?? null;
     timedOutSignInAttemptId = null;
     lastStartedSignInAttemptId = null;
     useGameStore.getState().invalidateServerSessionSync();
     useGameStore.getState().setStorageScope(null);
     useGameStore.getState().clearScopedProgress(null);
+    if (userId) {
+      useGameStore.getState().clearScopedProgress(userId);
+    }
     fetchMeInFlight = null;
     set({
       user: null,
@@ -531,31 +593,16 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       pendingEmail: null,
       pendingPasswordRecovery: false,
     });
+    setSignedOutFlag();
     clearAppStorageOnSignOut();
 
     try {
-      let shouldForceClearStorage = false;
       try {
         await supabase.auth.signOut({ scope: 'local' });
       } catch (err) {
-        shouldForceClearStorage = true;
         console.warn('Supabase sign-out failed (local state already cleared):', err);
       }
-
-      if (shouldForceClearStorage) {
-        clearSupabaseAuthStorage();
-      }
-
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          clearSupabaseAuthStorage();
-        }
-      } catch (err) {
-        // If session check fails, force-clear as a safety net.
-        clearSupabaseAuthStorage();
-        console.warn('Supabase session verification after sign-out failed:', err);
-      }
+      clearSupabaseAuthStorage();
 
       if (authSessionEpoch !== signOutEpoch) {
         return;
@@ -634,6 +681,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   },
 
   signInWithGoogle: async () => {
+    clearSignedOutFlag();
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
