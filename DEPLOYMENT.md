@@ -1,90 +1,87 @@
 # Deployment Guide
 
-## Prerequisites
+Wurmple is fully self-hosted on **ajmsd** (Ubuntu, Docker) and reached through
+the `ajmsd-ops` Cloudflare tunnel. Nothing depends on Supabase's hosted service.
 
-- Node.js 20+
-- Supabase CLI: `npm install` (installed as dev dependency)
-- `pg_dump` installed locally (for manual backups)
-- GitHub repository with Actions enabled
+| Hostname | Serves | Local port |
+|---|---|---|
+| `wurmple.ajmsd.space` | Built frontend (nginx) | `127.0.0.1:54380` |
+| `wurmple-api.ajmsd.space` | Auth, REST, edge functions (nginx gateway) | `127.0.0.1:54321` |
+| — | Postgres (admin/psql only) | `127.0.0.1:54322` |
 
-## Environment Variables
+`ajmsd.github.io/Pokemon-Wordle` only serves a redirect to the new domain.
 
-Copy `.env.example` to `.env.local` and fill in your values:
+## Architecture
 
-```
-VITE_SUPABASE_URL=https://fhzyxavhfjhwqvaibyeg.supabase.co
-VITE_SUPABASE_ANON_KEY=<anon key from Supabase Dashboard>
-SUPABASE_ACCESS_TOKEN=<personal access token from supabase.com/dashboard/account/tokens>
-```
+`selfhost/docker-compose.yml` runs a lean subset of Supabase:
 
-Never commit `.env.local`.
+| Service | Image | Memory cap | Role |
+|---|---|---|---|
+| `db` | `supabase/postgres` | 384 MB | Postgres 17 (tuned small) |
+| `auth` | `supabase/gotrue` | 96 MB | Email/password + Google sign-in, Brevo SMTP |
+| `rest` | `postgrest/postgrest` | 128 MB | Used by edge functions via supabase-js |
+| `functions` | `supabase/edge-runtime` | 512 MB | Runs `supabase/functions/*` |
+| `gateway` | `nginx` | 32 MB | Routes `/auth/v1`, `/rest/v1`, `/functions/v1`; serves the site; rate limits |
 
-## First-Time Setup
+Realtime, Storage, Studio, analytics, imgproxy and the pooler are omitted. Idle
+footprint is ~210 MB.
+
+Edge functions call auth/rest through the gateway's internal listener
+(`gateway:8001`), which is not published and not rate limited.
+
+## Secrets
+
+All secrets live only in `selfhost/.env` on ajmsd (mode 600, gitignored). See
+`selfhost/.env.example` for the keys. To set one without echoing it:
 
 ```bash
-# Install dependencies
+selfhost/scripts/set-secret.sh SMTP_PASS
+```
+
+Generate fresh DB/JWT secrets for a brand-new install with
+`node selfhost/scripts/gen-keys.mjs` (rotating `JWT_SECRET` signs everyone out).
+
+## Continuous deployment
+
+Cron on ajmsd runs `selfhost/scripts/deploy.sh` every 5 minutes. When
+`origin/master` has moved it fast-forwards and redeploys only what changed:
+
+- `selfhost/` → `docker compose up -d`, nginx reload
+- `supabase/migrations/` → `supabase migration up` against the local DB
+- `supabase/functions/`, `src/logic/` → restart edge functions
+- frontend sources → `npm run build` into `selfhost/.build`, synced to `selfhost/site`
+
+GitHub Actions (`.github/workflows/deploy.yml`) runs unit tests and the build
+on every push and publishes the GitHub Pages redirect.
+
+Deploy immediately, or redeploy everything:
+
+```bash
+ssh ajmsd
+~/Code/Pokemon-Wordle/selfhost/scripts/deploy.sh          # if master moved
+~/Code/Pokemon-Wordle/selfhost/scripts/deploy.sh --force  # everything
+```
+
+Logs: `selfhost/deploy.log`.
+
+## Database migrations
+
+Add a file to `supabase/migrations/` and push. The deploy applies it. Clients
+only get read access to their own rows; all writes go through edge functions
+using the service role, so new tables need no client write policies.
+
+## Local development
+
+```bash
 npm install
-
-# Log in to Supabase CLI using your access token
-npx supabase login --token <SUPABASE_ACCESS_TOKEN>
-
-# Link to the remote project
-npx supabase link --project-ref fhzyxavhfjhwqvaibyeg
+cp .env.example .env.local   # point VITE_SUPABASE_URL at the API you want
+npm run dev
 ```
 
-## Frontend Deployment
-
-**Automatic (CI/CD):** Push to `master` — GitHub Actions builds and deploys to GitHub Pages.
-
-**Manual:**
-```bash
-npm run build
-# Then push dist/ to the gh-pages branch, or deploy elsewhere
-```
-
-## Database Migrations
-
-**Via CI/CD (manual trigger):**
-Go to GitHub Actions > "Apply Database Migrations" > Run workflow.
-
-**Locally:**
-```bash
-npx supabase db push
-```
-
-List current migration state:
-```bash
-npx supabase migration list
-```
-
-## Edge Function Deployment
+## Health check
 
 ```bash
-npx supabase functions deploy health
-npx supabase functions deploy get-daily-puzzle
-npx supabase functions deploy submit-guess
-# ... deploy each function by name
+curl https://wurmple-api.ajmsd.space/functions/v1/health
 ```
 
-Or deploy all at once:
-```bash
-npx supabase functions deploy
-```
-
-## CI/CD Secrets Setup
-
-Add these secrets to your GitHub repository (Settings > Secrets and variables > Actions):
-
-| Secret | Where to get it |
-|--------|----------------|
-| `VITE_SUPABASE_URL` | Supabase Dashboard > Settings > API |
-| `VITE_SUPABASE_ANON_KEY` | Supabase Dashboard > Settings > API |
-| `SUPABASE_ACCESS_TOKEN` | supabase.com/dashboard/account/tokens |
-
-## Health Check
-
-```bash
-curl https://fhzyxavhfjhwqvaibyeg.supabase.co/functions/v1/health
-```
-
-Expected response: `{"status":"healthy","timestamp":"...","db":{"puzzles_count":N}}`
+Expected: `{"status":"healthy","timestamp":"...","db":{"puzzles_count":N}}`

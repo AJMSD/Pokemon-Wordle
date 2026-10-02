@@ -1,116 +1,128 @@
 # Runbook
 
-Operational procedures for the PokAcmon Wordle backend.
+Operational procedures for the self-hosted Wurmple backend on ajmsd. All
+commands run from `~/Code/Pokemon-Wordle/selfhost` unless noted.
 
 ---
 
-## Apply Migrations Manually
+## Status and logs
 
 ```bash
-npx supabase login --token <SUPABASE_ACCESS_TOKEN>
-npx supabase link --project-ref fhzyxavhfjhwqvaibyeg
-npx supabase db push
+docker compose ps
+docker stats --no-stream | grep wurmple
+docker compose logs --tail 100 functions   # edge functions (structured JSON)
+docker compose logs --tail 100 auth        # sign-in, email sending
+docker compose logs --tail 100 gateway     # requests, 429s
+tail -50 deploy.log backup.log
 ```
 
-Check current state first:
-```bash
-npx supabase migration list
-```
+Edge functions log JSON with `fn`, `method`, `user_id`, `status`, `duration_ms`.
 
----
-
-## Deploy Frontend Manually
+## Restart
 
 ```bash
-npm run build
-# Deploy dist/ to GitHub Pages or your hosting provider
+docker compose restart <service>   # db | auth | rest | functions | gateway
+docker compose up -d               # recreate anything whose config changed
 ```
 
-CI/CD auto-deploys on every push to `master`.
+The tunnel runs as the `cloudflared-ajmsd-ops` systemd service
+(config: `/etc/cloudflared/config.yml`).
 
 ---
 
-## View Edge Function Logs
+## Rate limits
 
-1. Go to [Supabase Dashboard](https://supabase.com/dashboard/project/fhzyxavhfjhwqvaibyeg/functions)
-2. Click on the function name
-3. Select the "Logs" tab
-4. Filter by time range or search for `"event":"rate_limited"` to find rate-limit hits
+| Layer | Scope | Limit |
+|---|---|---|
+| nginx | any API call, per client IP | 10 req/s, burst 40; 30 concurrent connections |
+| nginx | `/auth/v1/*`, per IP | 2 req/s, burst 20 |
+| nginx | signup / recover / otp / magiclink / resend, per IP | 5 req/min, burst 5 |
+| nginx | `submit-guess`, per IP | 2 req/s, burst 10 |
+| nginx | static site, per IP | 20 req/s, burst 100 |
+| GoTrue | auth emails, global | 12/hour (Brevo free tier is 300/day) |
+| app (`rate_limits` table) | `submit-guess` | 10/min per user, 30/min per guest IP |
+| app | `get-session`, `get-stats`, `refresh-state` | 30/min |
+| app | `update-profile`, `set-display-ball` | 10/min |
+| app | `dismiss-tier-prompt` | 20/min |
+| app | `create-profile`, `migrate-guest` | 5/hour |
+| app | `validate-email` | 10/min per IP |
 
-All functions emit structured JSON logs with `fn`, `method`, `user_id`, `status`, `duration_ms`.
+Client IPs come from Cloudflare's `CF-Connecting-IP` (only reachable via the
+tunnel, so it can't be spoofed). App-level hits log
+`{"fn":"rateLimit","event":"rate_limited",...}`; nginx rejections show as 429
+in the gateway log.
 
----
+**Excessive limiting:** find the key in function logs. A single user/IP is
+likely abuse; many distinct keys suggests a limit is too tight. App limits are
+the `checkRateLimit(...)` calls in each function; nginx limits are in
+`selfhost/nginx/default.conf`.
 
-## Handle Rate-Limit Alerts
-
-Rate-limit hits are logged as:
-```json
-{"fn":"rateLimit","event":"rate_limited","key":"<key>","retryAfter":<seconds>}
+**Ban a user:**
+```bash
+docker compose exec -T db psql -U supabase_admin -d postgres \
+  -c "update auth.users set banned_until = 'infinity' where email = 'x@example.com';"
 ```
 
-**If rate limiting is excessive:**
-1. Check logs for the affected `key` pattern (e.g., `submit-guess:user:<id>`)
-2. Identify if it's a single user (abuse) or broad (misconfiguration)
-3. For abuse: consider banning the user from Supabase Dashboard > Authentication > Users
-4. Limits are set per-function in each `checkRateLimit` call
+---
+
+## Auth and email
+
+- SMTP is Brevo (`smtp-relay.brevo.com:587`, login `…@smtp-brevo.com`). Brevo
+  IP blocking is disabled because ajmsd's home IP changes.
+- **Emails not arriving:** `docker compose logs auth | grep -i smtp`. Check the
+  Brevo dashboard (Transactional → Logs) and the 300/day quota.
+- **Google sign-in fails:** the OAuth client must list redirect URI
+  `https://wurmple-api.ajmsd.space/auth/v1/callback` and origin
+  `https://wurmple.ajmsd.space`.
+- **User cannot log in:** check `auth.users.email_confirmed_at` and
+  `banned_until`.
 
 ---
 
-## Auth Troubleshooting
+## Backups and restore
 
-**User cannot log in:**
-- Check Supabase Dashboard > Authentication > Users — verify email is confirmed
-- Check edge function logs for `"status":401` on `get-me`
+Nightly at 03:30 (cron) `scripts/backup.sh` dumps the `auth` and `public`
+schemas to `selfhost/backups/` (14 days kept) and prunes old rate-limit rows.
 
-**Email verification not received:**
-- Check Supabase Dashboard > Authentication > Email Templates
-- Verify the SMTP provider is configured (Settings > Authentication > SMTP)
+Manual backup: `scripts/backup.sh`
 
-**Session expired errors:**
-- Client should refresh the session using Supabase `auth.refreshSession()`
-- `gameStore.ts` calls `getAuthSession()` which reads from localStorage
-
----
-
-## Run Manual Backup
+Restore into the running DB (destructive — replaces current data):
 
 ```bash
-DB_URL="postgres://postgres:<password>@db.fhzyxavhfjhwqvaibyeg.supabase.co:5432/postgres" \
-  ./scripts/backup.sh
+gunzip -c backups/wurmple_YYYYMMDD_HHMMSS.sql.gz \
+  | docker compose exec -T db psql -U supabase_admin -d postgres
 ```
 
-Get the DB connection string from:
-Supabase Dashboard > Settings > Database > Connection string > URI
-
-Backups are saved to `backups/backup_YYYYMMDD_HHMMSS.sql`. The `backups/` directory is gitignored.
+Copy backups off the machine periodically (e.g. to Google Drive).
 
 ---
 
-## Set Up Uptime Monitoring
+## Uptime monitoring
 
-1. Go to [UptimeRobot](https://uptimerobot.com) and create a free account
-2. Add a new monitor:
-   - Type: **HTTP(s)**
-   - URL: `https://fhzyxavhfjhwqvaibyeg.supabase.co/functions/v1/health`
-   - Interval: 5 minutes
-3. Configure alert contacts (email, Slack, etc.)
-4. The health endpoint returns HTTP 200 when healthy, HTTP 503 when DB is unreachable
+Point UptimeRobot (free, 5-minute HTTP check) at
+`https://wurmple-api.ajmsd.space/functions/v1/health`. It returns 200 when
+healthy and 503 when the DB is unreachable.
 
 ---
 
-## Query Analytics Views
+## Analytics
 
-From Supabase Dashboard > SQL Editor:
-
-```sql
--- Daily participation
-SELECT * FROM analytics_daily_participation LIMIT 30;
-
--- Overall win rate
-SELECT * FROM analytics_win_rate;
-
--- Streak distribution
-SELECT * FROM analytics_streak_distribution;
+```bash
+docker compose exec -T db psql -U supabase_admin -d postgres -c "select * from analytics_win_rate;"
+# also: analytics_daily_participation, analytics_streak_distribution
 ```
 
-These views are accessible only to the service role (not anon or authenticated users).
+Views are readable only by the service role / admin.
+
+---
+
+## Capacity check
+
+```bash
+set -a; . ./.env; set +a
+node scripts/loadtest.mjs puzzle 20 15
+node scripts/loadtest.mjs guess 20 15
+# then clean up:
+docker compose exec -T db psql -U supabase_admin -d postgres -c \
+  "delete from daily_sessions where guest_id like 'loadtest-%'; delete from rate_limits where key like '%:ip:%';"
+```
