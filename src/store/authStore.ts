@@ -510,7 +510,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       password,
       options: {
         data: { username },
-        emailRedirectTo: 'https://ajmsd.github.io/Pokemon-Wordle',
+        emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL}`,
       },
     });
 
@@ -675,7 +675,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     const { error } = await supabase.auth.resend({
       type: 'signup',
       email,
-      options: { emailRedirectTo: 'https://ajmsd.github.io/Pokemon-Wordle' },
+      options: { emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL}` },
     });
     return { error: error?.message ?? null };
   },

@@ -1,0 +1,6 @@
+.env
+site/
+dumps/
+backups/
+.deploy.lock
+.build/

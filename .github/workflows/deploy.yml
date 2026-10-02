@@ -1,4 +1,7 @@
-name: Deploy to GitHub Pages
+name: Test and publish GitHub Pages redirect
+
+# The app is self-hosted on ajmsd (see selfhost/), which pulls master and
+# deploys itself. GitHub Pages only serves a redirect to the new domain.
 
 on:
   push:
@@ -9,7 +12,7 @@ permissions:
   contents: write
 
 jobs:
-  deploy:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,12 +31,15 @@ jobs:
 
       - name: Build
         run: npm run build
-        env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
-      - name: Deploy to GitHub Pages
+  redirect:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish redirect to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist
+          publish_dir: ./.github/pages-redirect
