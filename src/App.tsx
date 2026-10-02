@@ -18,7 +18,7 @@ const ProfilePage = lazy(() => import('./components/ProfilePage'))
 const AuthModal = lazy(() => import('./components/AuthModal'))
 
 function PageSkeleton() {
-  return <div className="animate-pulse bg-pokemon-red/10 h-96 w-full" />
+  return <div className="animate-pulse bg-pokemon-red/10 flex-1 min-h-0 w-full" />
 }
 
 const STREAK_MILESTONES: Record<number, string> = {
@@ -179,7 +179,7 @@ function App() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 bg-white/70 pixel-frame my-4">
+    <div className="mx-auto my-2 md:my-4 flex h-[calc(100dvh-1rem)] md:h-[calc(100dvh-2rem)] w-full max-w-6xl flex-col px-2 py-2 md:px-4 md:py-4 bg-white/70 pixel-frame">
       <OfflineBanner />
       <div className="hidden md:block">
         <Header
@@ -191,7 +191,7 @@ function App() {
         />
       </div>
       {showUnverifiedBanner && (
-        <div className="flex items-center justify-between bg-yellow-50 border-2 border-yellow-600 text-yellow-800 text-sm px-4 py-3 mb-4 gap-4">
+        <div className="flex items-center justify-between bg-yellow-50 border-2 border-yellow-600 text-yellow-800 text-sm px-4 py-2 mb-2 gap-4">
           <span>
             Verify your email to start tracking your Trainer stats.{' '}
             <button onClick={handleResendVerification} className="underline hover:text-yellow-900 pixel-focus">
@@ -204,7 +204,8 @@ function App() {
         </div>
       )}
       <Suspense fallback={<PageSkeleton />}>
-        <main className="pt-0">
+        {/* Pages fit by layout; the hidden-bar scroll is only a fallback for very short viewports. */}
+        <main className="flex-1 min-h-0 overflow-y-auto no-scrollbar">
           {showProfile
             ? (
               <ProfilePage

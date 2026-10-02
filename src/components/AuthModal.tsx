@@ -338,7 +338,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={canClose ? onClose : undefined}>
       <div className="absolute inset-0 bg-black/50" />
       <div
-        className="relative bg-white pixel-frame w-full max-w-sm p-6"
+        className="relative bg-white pixel-frame w-full max-w-sm p-6 max-h-[calc(100dvh-2rem)] overflow-y-auto no-scrollbar"
         role="dialog"
         aria-modal="true"
         aria-labelledby="auth-modal-title"
@@ -347,7 +347,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
         {canClose && (
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 pixel-focus"
+            className="absolute top-1.5 right-1.5 p-2.5 text-gray-500 hover:text-gray-800 pixel-focus"
             aria-label="Close"
           >
             <Close width={24} height={24} aria-hidden="true" />

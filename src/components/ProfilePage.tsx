@@ -51,22 +51,24 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
   const totalLosses = stats ? stats.total_participations - stats.total_wins : 0
 
   return (
-    <div className="max-w-sm mx-auto py-6">
+    <div className="max-w-sm sm:max-w-md mx-auto px-1 py-2 sm:py-4">
       <button
         onClick={onBack}
-        className="flex items-center gap-1 min-h-[44px] text-sm text-gray-500 hover:text-gray-700 mb-4 pixel-focus"
+        className="flex items-center gap-1 min-h-[44px] text-sm text-gray-500 hover:text-gray-700 mb-2 pixel-focus"
       >
         <ArrowLeft width={24} height={24} aria-hidden="true" />
         Back to Game
       </button>
 
-      <div className="bg-white pixel-frame p-6">
+      <div className="bg-white pixel-frame p-4 sm:p-6">
         {/* Avatar + username */}
-        <div className="flex flex-col items-center gap-3 mb-6">
+        <div className="flex flex-col items-center gap-2 sm:gap-3 mb-4 sm:mb-6">
           {avatarSrc ? (
-            <img src={avatarSrc} alt="avatar" className="sprite w-24 h-24 border-2 border-gray-900 bg-gray-50" decoding="async" width={96} height={96} />
+            <img src={avatarSrc} alt="avatar" className="sprite w-20 h-20 sm:w-24 sm:h-24 border-2 border-gray-900 bg-gray-50" decoding="async" width={96} height={96} />
           ) : (
-            <DefaultAvatar size={96} />
+            <span className="w-20 h-20 sm:w-24 sm:h-24 inline-flex [&>svg]:w-full [&>svg]:h-full">
+              <DefaultAvatar size={96} />
+            </span>
           )}
           <div className="text-center">
             <p className="text-xl font-bold text-gray-900">{profile?.username ?? '—'}</p>
@@ -98,7 +100,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
           </div>
         ) : isInitialLoading ? (
           <div className="animate-pulse space-y-2">
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {[...Array(4)].map((_, i) => (
                 <div key={i} className="h-12 bg-gray-100" />
               ))}
@@ -123,20 +125,20 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
 
             {stats ? (
               <>
-                <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div className="bg-gray-50 border-2 border-gray-200 p-3 text-center">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-3">
+                  <div className="bg-gray-50 border-2 border-gray-200 p-2 sm:p-3 text-center">
                     <p className="text-2xl font-bold text-gray-900">{stats.current_streak}</p>
                     <p className="text-xs text-gray-500 mt-0.5">Current Streak</p>
                   </div>
-                  <div className="bg-gray-50 border-2 border-gray-200 p-3 text-center">
+                  <div className="bg-gray-50 border-2 border-gray-200 p-2 sm:p-3 text-center">
                     <p className="text-2xl font-bold text-gray-900">{stats.max_streak}</p>
                     <p className="text-xs text-gray-500 mt-0.5">Best Streak</p>
                   </div>
-                  <div className="bg-gray-50 border-2 border-gray-200 p-3 text-center">
+                  <div className="bg-gray-50 border-2 border-gray-200 p-2 sm:p-3 text-center">
                     <p className="text-2xl font-bold text-gray-900">{winPct}%</p>
                     <p className="text-xs text-gray-500 mt-0.5">Win Rate</p>
                   </div>
-                  <div className="bg-gray-50 border-2 border-gray-200 p-3 text-center">
+                  <div className="bg-gray-50 border-2 border-gray-200 p-2 sm:p-3 text-center">
                     <p className="text-2xl font-bold text-gray-900">{stats.avg_guesses > 0 ? stats.avg_guesses.toFixed(1) : '—'}</p>
                     <p className="text-xs text-gray-500 mt-0.5">Avg Guesses</p>
                   </div>

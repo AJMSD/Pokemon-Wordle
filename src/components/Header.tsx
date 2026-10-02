@@ -42,7 +42,7 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
   const handleSignOut = boot ? undefined : (onSignOut ?? signOut)
 
   return (
-    <header className="sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6 py-3 border-b-2 border-gray-900 bg-white mb-6">
+    <header className="sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6 py-2 border-b-2 border-gray-900 bg-white mb-3">
       {/* Left: Logo + title */}
       <button
         onClick={onGoHome}
@@ -61,7 +61,7 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
       <div className="flex items-center gap-2 sm:gap-3">
         {/* Ball badge pill */}
         <div
-          className="pixel-chip gap-1.5 bg-gray-100 px-2.5 py-1"
+          className="inline-flex items-center gap-1.5 bg-gray-100 px-2.5 py-1"
           title={showAsUser ? `Equipped: ${ballName}` : undefined}
         >
           <img
@@ -96,7 +96,7 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
             <button
               onClick={handleShowCollection}
               aria-disabled={!handleShowCollection || undefined}
-              className="p-1 text-gray-600 hover:text-pokemon-red hover:bg-gray-100 pixel-focus"
+              className="header-icon-btn p-1 text-gray-600 hover:text-pokemon-red pixel-focus"
               aria-label="Collection"
             >
               <Archive width={24} height={24} aria-hidden="true" />
@@ -111,20 +111,20 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
             <button
               onClick={handleShowProfile}
               aria-disabled={!handleShowProfile || undefined}
-              className="p-0.5 hover:bg-gray-100 pixel-focus"
+              className="header-icon-btn p-1 pixel-focus"
               aria-label="Profile"
             >
               {avatarSrc ? (
                 <img
                   src={avatarSrc}
                   alt="Trainer avatar"
-                  className="sprite w-8 h-8 object-cover border-2 border-gray-900 bg-gray-50"
+                  className="sprite w-8 h-8 object-cover bg-gray-50"
                   decoding="async"
                   width={32}
                   height={32}
                 />
               ) : (
-                <span className="w-8 h-8 overflow-hidden border-2 border-gray-900 inline-flex">
+                <span className="w-8 h-8 overflow-hidden inline-flex">
                   <DefaultAvatar size={32} />
                 </span>
               )}
@@ -152,7 +152,7 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
             <button
               onClick={handleSignOut}
               aria-disabled={!handleSignOut || undefined}
-              className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-100 pixel-focus"
+              className="header-icon-btn p-1 text-gray-500 hover:text-gray-700 pixel-focus"
               aria-label="Sign Out"
             >
               <Logout width={24} height={24} aria-hidden="true" />

@@ -56,7 +56,7 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-white pixel-frame w-full max-w-sm p-6" role="dialog" aria-modal="true" aria-labelledby="avatar-picker-title">
+      <div className="bg-white pixel-frame w-full max-w-sm p-4 sm:p-6 max-h-[calc(100dvh-2rem)] overflow-y-auto no-scrollbar" role="dialog" aria-modal="true" aria-labelledby="avatar-picker-title">
         <h2 id="avatar-picker-title" className="text-xl font-bold text-center text-gray-900 mb-4">Choose your trainer</h2>
 
         <div className="flex items-center gap-3 mb-3">
@@ -79,7 +79,7 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
           </label>
         </div>
 
-        <div className="grid grid-cols-5 gap-2 mb-6 max-h-64 overflow-y-auto pr-1">
+        <div className="grid grid-cols-5 gap-2 mb-4 sm:mb-6 max-h-[min(16rem,40dvh)] overflow-y-auto no-scrollbar">
           {filtered.length === 0 ? (
             <p className="col-span-5 text-center text-sm text-gray-400 py-4">No Pokémon found</p>
           ) : filtered.map(p => (

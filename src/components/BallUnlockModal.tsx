@@ -12,9 +12,9 @@ const BallUnlockModal: React.FC<BallUnlockModalProps> = ({ ballName, ballId, vis
   if (!visible) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div
-        className="bg-white pixel-frame pop-in p-8 max-w-sm w-full mx-4 text-center"
+        className="bg-white pixel-frame pop-in p-6 sm:p-8 max-w-sm w-full max-h-[calc(100dvh-2rem)] overflow-y-auto no-scrollbar text-center"
         role="dialog"
         aria-modal="true"
         aria-labelledby="ball-unlock-title"

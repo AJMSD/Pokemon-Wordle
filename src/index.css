@@ -25,6 +25,7 @@
   html {
     font-family: 'Silkscreen', sans-serif;
     height: 100%;
+    overflow: hidden;
   }
 
   body {
@@ -32,6 +33,7 @@
     position: relative;
     min-height: 100%;
     height: 100%;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -136,6 +138,31 @@
     animation: fadeInScale 0.3s steps(3, end);
   }
 
+  /* Borderless header button: a light tile at rest, lifts on hover, presses down. */
+  .header-icon-btn {
+    border-radius: 0;
+    background-color: #f3f4f6;
+    transition: none;
+  }
+  .header-icon-btn:hover:not([aria-disabled="true"]) {
+    background-color: #e5e7eb;
+    transform: translateY(calc(var(--px) * -1));
+    box-shadow: 0 var(--px) 0 0 var(--pixel-ink);
+  }
+  .header-icon-btn:active:not([aria-disabled="true"]) {
+    transform: translateY(var(--px));
+    box-shadow: none;
+  }
+
+  /* Scrolls when it must, never shows a bar. */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
   /* Square tag. */
   .pixel-chip {
     display: inline-flex;
@@ -155,12 +182,14 @@
 .pokedex {
   display: flex;
   flex-direction: row;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  justify-content: center;
+  align-items: center;
   max-width: 960px;
+  height: 100%;
   margin: 0 auto;
   padding: 10px;
   gap: 10px;
-  min-height: 700px; /* Add a minimum height to maintain consistency */
 }
 
 /* Left panel styles */
@@ -168,12 +197,13 @@
   background-color: var(--pokedex-red);
   border-radius: 0;
   padding: 10px;
-  width: 100%;
-  max-width: 400px;
+  flex: 0 1 400px;
+  min-width: 0;
   border: 2px solid #7e0018;
   box-shadow: var(--pixel-shadow);
   position: relative;
-  height: 700px; /* Fixed height for consistency */
+  height: 100%;
+  max-height: 700px;
   display: flex;
   flex-direction: column;
 }
@@ -311,6 +341,7 @@
   box-shadow: inset -2px -2px 0 rgba(0, 0, 0, 0.2);
   margin-bottom: 15px;
   flex-grow: 1; /* Allow this to take available space */
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -319,12 +350,12 @@
   background-color: var(--pokedex-black);
   border: 3px solid #111;
   border-radius: 0;
-  height: 300px;
+  flex: 1 1 0;
+  min-height: 120px;
+  overflow: hidden;
   display: flex;
-  justify-content: center;
   justify-content: space-between;
   margin-top: 10px;
-  flex-grow: 1; /* Let it grow to fill available space */
 }
 
 .pokemon-image-container {
@@ -458,9 +489,23 @@
   border-radius: 0;
   max-height: 200px;
   overflow-y: auto;
+  scrollbar-width: none;
   z-index: 10;
   box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.45);
   animation: slide-down 150ms ease-out;
+}
+.suggestions-dropdown::-webkit-scrollbar {
+  display: none;
+}
+
+/* On desktop the input sits at the bottom of the panel, so suggestions open upward. */
+@media (min-width: 769px) {
+  .suggestions-dropdown {
+    top: auto;
+    bottom: 100%;
+    border-top: 2px solid var(--pokedex-black);
+    border-bottom: none;
+  }
 }
 
 .suggestion-item {
@@ -488,11 +533,12 @@
   background-color: var(--pokedex-red);
   border-radius: 0;
   padding: 15px;
-  width: 100%;
-  max-width: 500px;
+  flex: 0 1 500px;
+  min-width: 0;
   border: 2px solid #7e0018;
   box-shadow: var(--pixel-shadow);
-  height: 700px;
+  height: 100%;
+  max-height: 700px;
   display: flex;
   flex-direction: column;
 }
@@ -513,11 +559,15 @@
   border: 2px solid #a0a0a0;
   box-shadow: inset -2px -2px 0 rgba(0, 0, 0, 0.08);
   padding: 15px;
-  max-height: 100%; /* Use all available space */
-  flex-grow: 1; /* Allow it to grow */
-  overflow-y: auto; /* Add scroll when needed */
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto; /* Grows to 10 guesses; scrolls without a bar. */
+  scrollbar-width: none;
   display: flex;
   flex-direction: column;
+}
+.guesses-container::-webkit-scrollbar {
+  display: none;
 }
 
 /* HintPanel styles */
@@ -676,8 +726,12 @@
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  scrollbar-width: none;
   background-color: rgba(255, 255, 255, 0.1);
   border-radius: 0;
+}
+.mobile-hint-panel::-webkit-scrollbar {
+  display: none;
 }
 
 /* Make sure the hint content is properly styled in the main screen */
@@ -719,10 +773,13 @@
     justify-content: flex-start;
   }
 
+  /* The Pokedex column fills <main>: the left panel takes its content height,
+     the guesses panel takes whatever is left. */
   .pokedex {
     flex-direction: column;
-    align-items: center;
-    min-height: auto;
+    align-items: stretch;
+    padding: 4px;
+    gap: 8px;
   }
 
   .pokedex-left-panel,
@@ -730,13 +787,55 @@
     max-width: 100%;
     width: 100%;
     height: auto;
-    min-height: 500px;
+    max-height: none;
+  }
+
+  .pokedex-left-panel {
+    flex: 0 0 auto;
+    padding: 8px;
+  }
+
+  .pokedex-right-panel {
+    flex: 1 1 0;
+    min-height: 120px;
+    padding: 8px;
+  }
+
+  .left-panel-top {
+    padding: 2px 4px 6px;
+  }
+
+  .blue-light {
+    width: 44px;
+    height: 44px;
+  }
+
+  .blue-light::after {
+    top: 9px;
+    left: 9px;
+    width: 14px;
+    height: 14px;
+  }
+
+  .main-screen-container {
+    padding: 10px;
+    margin-bottom: 8px;
   }
 
   .main-screen {
-    height: 250px;
-    overflow: hidden;
-    flex-grow: 0;
+    flex: 0 0 auto;
+    height: clamp(140px, 26dvh, 240px);
+    min-height: 140px;
+    margin-top: 0;
+  }
+
+  .main-screen-decorations {
+    margin-top: 8px;
+  }
+
+  .bottom-light {
+    width: 20px;
+    height: 20px;
   }
 
   .pokemon-image {
@@ -749,24 +848,38 @@
   }
 
   .guesses-container {
-    max-height: 350px;
-    flex-grow: 0;
+    padding: 10px;
   }
 
   /* Enhance mobile specific elements */
+  /* "safe" keeps tall content reachable from the top instead of clipping it. */
   .mobile-hint-panel {
     display: flex;
-    justify-content: center;
+    justify-content: safe center;
     align-items: center;
   }
 
+  .mobile-hint-panel .pokedex-info {
+    font-size: 0.8rem;
+  }
+
+  .mobile-hint-panel .info-title {
+    font-size: 0.95rem;
+    margin-bottom: 4px;
+  }
+
   .mobile-hint-panel .info-sections {
-    width: 90%;
+    width: 95%;
+    gap: 4px;
+  }
+
+  .mobile-hint-panel .info-item {
+    margin-bottom: 0;
   }
 
   /* Adjust spacing on mobile */
   .guess-input-container {
-    padding: 10px;
+    padding: 4px 2px 2px;
   }
 
   .guess-form {
@@ -783,15 +896,10 @@
   }
 
   .mobile-trainer-trigger {
-    min-height: 40px;
+    min-height: 44px;
     min-width: 90px;
     font-size: 11px;
     padding: 6px 8px;
-  }
-
-  /* Better spacing for mobile view */
-  .pokedex-right-panel {
-    margin-top: 15px;
   }
 
   /* Mobile touch targets */
@@ -949,58 +1057,17 @@ header h1 {
   .sound-hole,
   .hint-glow,
   .unlock-ring-animate,
-  .ball-active-glow,
+  .tier-crown,
   .pop-in { animation: none !important; transition: none !important; }
   .pixel-btn:hover:not(:disabled),
   .pixel-btn:active:not(:disabled),
-  .equip-btn:active:not(:disabled) { transform: none; }
+  .equip-btn:active:not(:disabled),
+  .header-icon-btn:hover:not([aria-disabled="true"]),
+  .header-icon-btn:active:not([aria-disabled="true"]) { transform: none; }
   .suggestions-dropdown { animation: none !important; }
 }
 
-/* Active display ball: a glow that hugs the sprite's outline */
-.ball-active-glow {
-  filter:
-    drop-shadow(var(--px) 0 0 #f8c000)
-    drop-shadow(calc(var(--px) * -1) 0 0 #f8c000)
-    drop-shadow(0 var(--px) 0 #f8c000)
-    drop-shadow(0 calc(var(--px) * -1) 0 #f8c000);
-  animation: ballActiveGlow 1.8s steps(1, end) infinite;
-}
-
-@keyframes ballActiveGlow {
-  0%, 100% {
-    filter:
-      drop-shadow(var(--px) 0 0 #f8c000)
-      drop-shadow(calc(var(--px) * -1) 0 0 #f8c000)
-      drop-shadow(0 var(--px) 0 #f8c000)
-      drop-shadow(0 calc(var(--px) * -1) 0 #f8c000);
-  }
-  50% {
-    filter:
-      drop-shadow(var(--px) 0 0 #ff8c00)
-      drop-shadow(calc(var(--px) * -1) 0 0 #ff8c00)
-      drop-shadow(0 var(--px) 0 #ff8c00)
-      drop-shadow(0 calc(var(--px) * -1) 0 #ff8c00);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ball-active-glow {
-    animation: none;
-  }
-}
-
 /* ---- Equipped ball + streak tier (Collection) ---- */
-.equipped-panel {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px;
-  background: #fffbea;
-  border: 2px solid #1a1a1a;
-  box-shadow: 4px 4px 0 #1a1a1a;
-}
-
 /* Gold pixel frame with notched corners: hard shadows only, no blur. */
 .equipped-frame {
   box-shadow:
@@ -1042,41 +1109,57 @@ header h1 {
 }
 .tier-slot--selected {
   outline: 2px dashed #3b4cca;
-  outline-offset: 6px;
+  outline-offset: 3px;
 }
 .tier-slot:focus-visible {
   outline: 2px dashed #1a1a1a;
-  outline-offset: 6px;
+  outline-offset: 3px;
 }
 
 .tier-marker {
   position: absolute;
-  top: -28px;
+  top: -24px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  font-size: 10px;
-  line-height: 1;
-  white-space: nowrap;
-  text-transform: uppercase;
-  color: #ee1515;
+  line-height: 0;
   animation: tierMarkerBob 1s steps(2, jump-none) infinite;
 }
 .tier-marker--past {
   top: -20px;
   color: #22a447;
   font-size: 14px;
+  line-height: 1;
   animation: none;
 }
-/* Stepped pixel arrow pointing down at the slot. */
-.tier-marker__arrow {
-  width: 10px;
-  height: 6px;
-  background: currentColor;
-  clip-path: polygon(0 0, 100% 0, 100% 34%, 80% 34%, 80% 67%, 60% 67%, 60% 100%, 40% 100%, 40% 67%, 20% 67%, 20% 34%, 0 34%);
+/* Pixel crown over the current tier: a dark outline, then a gold rim that pulses. */
+.tier-crown {
+  display: block;
+  filter:
+    drop-shadow(var(--px) 0 0 var(--pixel-ink))
+    drop-shadow(calc(var(--px) * -1) 0 0 var(--pixel-ink))
+    drop-shadow(0 var(--px) 0 var(--pixel-ink))
+    drop-shadow(0 calc(var(--px) * -1) 0 var(--pixel-ink))
+    drop-shadow(var(--px) 0 0 #f8c000)
+    drop-shadow(calc(var(--px) * -1) 0 0 #f8c000)
+    drop-shadow(0 var(--px) 0 #f8c000)
+    drop-shadow(0 calc(var(--px) * -1) 0 #f8c000);
+  animation: tierCrownGlow 1.6s steps(1, end) infinite;
+}
+@keyframes tierCrownGlow {
+  50% {
+    filter:
+      drop-shadow(var(--px) 0 0 var(--pixel-ink))
+      drop-shadow(calc(var(--px) * -1) 0 0 var(--pixel-ink))
+      drop-shadow(0 var(--px) 0 var(--pixel-ink))
+      drop-shadow(0 calc(var(--px) * -1) 0 var(--pixel-ink))
+      drop-shadow(var(--px) 0 0 #fff3a0)
+      drop-shadow(calc(var(--px) * -1) 0 0 #fff3a0)
+      drop-shadow(0 var(--px) 0 #fff3a0)
+      drop-shadow(0 calc(var(--px) * -1) 0 #fff3a0);
+  }
 }
 @keyframes tierMarkerBob {
   from { transform: translate(-50%, 0); }
@@ -1135,7 +1218,8 @@ header h1 {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tier-marker {
+  .tier-marker,
+  .tier-crown {
     animation: none;
   }
 }

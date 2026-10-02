@@ -41,17 +41,46 @@ const GUEST_ACHIEVEMENT: BallEntry[] = [
   { id: 'heal-ball',   display_name: 'Heal Ball',   category: 'achievement', status: 'locked', hint: 'Win 3 times in a row after a loss' },
 ]
 
-function describeBall(ballId: string, entry: BallEntry | undefined): string {
-  if (entry?.hint) return entry.hint
-  const guestHint = GUEST_ACHIEVEMENT.find(b => b.id === ballId)?.hint
-  if (guestHint) return guestHint
-  const threshold = TIER_THRESHOLDS[ballId]
-  if (threshold === undefined) return 'A special ball from your collection.'
-  return threshold === 0 ? 'The starting streak tier.' : `Streak tier for a ${threshold}-win streak.`
-}
-
 const EquippedRibbon: React.FC = () => (
   <span className="equipped-ribbon" aria-hidden="true">★ Equipped</span>
+)
+
+// 11x7 pixel crown. g = gold, y = highlight, r = jewel, d = shaded band.
+const CROWN_PIXELS = [
+  'y....y....y',
+  'g....g....g',
+  'gg..ggg..gg',
+  'ggggggggggg',
+  'grgggrgggrg',
+  'ggggggggggg',
+  'ddddddddddd',
+]
+
+const CROWN_COLORS: Record<string, string> = {
+  g: '#f8c000',
+  y: '#fff3a0',
+  r: '#e3242b',
+  d: '#c88a00',
+}
+
+const CROWN_RECTS = CROWN_PIXELS.flatMap((row, y) =>
+  [...row].flatMap((c, x) => (CROWN_COLORS[c] ? [{ x, y, fill: CROWN_COLORS[c] }] : [])),
+)
+
+const TierCrown: React.FC = () => (
+  <svg
+    className="tier-crown"
+    width={22}
+    height={14}
+    viewBox="0 0 11 7"
+    shapeRendering="crispEdges"
+    aria-hidden="true"
+    focusable="false"
+  >
+    {CROWN_RECTS.map(p => (
+      <rect key={`${p.x}-${p.y}`} x={p.x} y={p.y} width={1} height={1} fill={p.fill} />
+    ))}
+  </svg>
 )
 
 function isSelectable(ball: BallEntry): boolean {
@@ -157,8 +186,6 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
 
   const currentDisplayBall = profile?.display_ball ?? 'poke-ball'
   const currentTierIdx = STANDARD_ORDER.indexOf(ballData?.current_streak_tier ?? 'poke-ball')
-  const equippedName = BALL_NAMES[currentDisplayBall] ?? currentDisplayBall
-  const equippedDescription = describeBall(currentDisplayBall, ballData?.balls.find(b => b.id === currentDisplayBall))
 
   // Segmented progress from the current streak tier to the next one.
   const streak = stats?.current_streak ?? 0
@@ -169,49 +196,34 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
   const winsToNext = upcomingTier ? upcomingTier.threshold - streak : 0
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6">
-      <button
-        onClick={onBack}
-        className="flex items-center gap-2 min-h-[44px] text-sm text-gray-600 hover:text-pokemon-red mb-4 pixel-focus"
-      >
-        <ArrowLeft width={24} height={24} aria-hidden="true" />
-        Back to Game
-      </button>
-
-      <h2 className="text-2xl font-bold text-gray-800 mb-1">Ball Collection</h2>
-      <p className="text-sm text-gray-500 mb-6">Earn balls by playing and achieving milestones.</p>
+    <div className="max-w-3xl mx-auto px-2 sm:px-4 py-2 sm:py-4">
+      <div className="flex items-center gap-2 sm:gap-4 mb-1">
+        <button
+          onClick={onBack}
+          aria-label="Back to Game"
+          className="flex items-center gap-2 min-h-[44px] min-w-[44px] text-sm text-gray-600 hover:text-pokemon-red pixel-focus flex-shrink-0"
+        >
+          <ArrowLeft width={24} height={24} aria-hidden="true" />
+          <span className="hidden sm:inline">Back to Game</span>
+        </button>
+        <h2 className="text-xl sm:text-2xl font-bold text-gray-800 leading-tight">Ball Collection</h2>
+      </div>
+      <p className="hidden sm:block text-sm text-gray-500 mb-3">Earn balls by playing and achieving milestones.</p>
       {setBallError && (
-        <div className="mb-4 border-2 border-red-400 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+        <div className="mb-3 border-2 border-red-400 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
           {setBallError}
         </div>
       )}
 
-      {isGuest ? (
-        <div className="mb-6 bg-red-50 pixel-frame p-4 text-center">
-          <p className="text-sm font-bold text-gray-800 mb-0.5">Sign in to start earning balls</p>
-          <p className="text-xs text-gray-500">Track your streak and unlock achievement balls</p>
+      {isGuest && (
+        <div className="mt-2 mb-4 bg-red-50 pixel-frame px-3 py-2 text-center">
+          <p className="text-sm font-bold text-gray-800">Sign in to start earning balls</p>
+          <p className="hidden sm:block text-xs text-gray-500 mt-0.5">Track your streak and unlock achievement balls</p>
         </div>
-      ) : (
-        <section aria-labelledby="equipped-heading" className="equipped-panel mb-8">
-          <img
-            src={ballSpriteUrl(currentDisplayBall)}
-            alt=""
-            className="sprite w-16 h-16 flex-shrink-0 ball-active-glow"
-            decoding="async"
-            width={64}
-            height={64}
-          />
-          <div className="min-w-0">
-            <h3 id="equipped-heading" className="text-xs text-gray-500 uppercase tracking-wide">Equipped</h3>
-            <p className="text-lg font-bold text-gray-900 leading-tight">{equippedName}</p>
-            <p className="text-xs text-gray-600 mt-1">{equippedDescription}</p>
-            <p className="text-xs text-gray-400 mt-1">Shown next to your name and streak.</p>
-          </div>
-        </section>
       )}
 
       {isInitialLoading ? (
-        <div className="animate-pulse space-y-6">
+        <div className="animate-pulse space-y-4 mt-2">
           <div className="bg-white pixel-frame p-4">
             <div className="flex items-center gap-3">
               {[...Array(4)].map((_, i) => (
@@ -222,23 +234,23 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
               ))}
             </div>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="h-32 bg-gray-100" />
+          <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-1.5 sm:gap-3">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="h-11 sm:h-32 bg-gray-100" />
             ))}
           </div>
         </div>
       ) : (
         <>
           {isRefreshing && (
-            <p className="text-xs text-gray-400 mb-4">Refreshing collection...</p>
+            <p className="text-xs text-gray-400 mb-2">Refreshing collection...</p>
           )}
 
           {/* Standard tier track */}
-          <section className="mb-8">
-            <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-4">Streak Tier</h3>
-            <div className="bg-white pixel-frame p-4">
-              <div className="flex w-full items-start pt-7">
+          <section className="mb-3 sm:mb-4">
+            <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-2">Streak Tier</h3>
+            <div className="bg-white pixel-frame p-3 sm:p-4">
+              <div className="flex w-full items-start pt-7 px-3 sm:px-6">
                 {standardBalls.map((ball, i) => {
                   const isPast = ball.status === 'past_tier'
                   const isCurrent = ball.status === 'current_tier'
@@ -247,14 +259,15 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
                   const isDisplay = !isGuest && currentDisplayBall === ball.id
                   const canSelect = !isGuest && isSelectable(ball)
                   const tierState = isCurrent ? ', your current tier' : isPast ? ', tier reached' : ', locked tier'
+                  const showTierEquip = isSelected && ball.id !== currentDisplayBall
 
                   return (
                     <React.Fragment key={ball.id}>
-                      <div className="relative flex flex-col items-center gap-1 flex-shrink-0 w-14">
+                      <div className="relative flex flex-col items-center gap-1.5 flex-shrink-0 w-14">
                         {isCurrent && (
                           <span className="tier-marker">
-                            You are here
-                            <span className="tier-marker__arrow" aria-hidden="true" />
+                            <TierCrown />
+                            <span className="sr-only">You are here</span>
                           </span>
                         )}
                         {isPast && <span className="tier-marker tier-marker--past" aria-hidden="true">✓</span>}
@@ -282,15 +295,16 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
                             />
                           )}
                         </button>
-                        <span className={`text-xs text-center leading-tight max-w-[56px] ${isFuture ? 'text-gray-400' : 'text-gray-700'}`}>
+                        <span className={`text-xs text-center leading-tight max-w-[56px] ${isFuture ? 'text-gray-400' : 'text-gray-700'} ${showTierEquip ? 'invisible' : ''}`}>
                           {ball.display_name}
                         </span>
                         {isDisplay && !isFuture && <EquippedRibbon />}
-                        {isSelected && ball.id !== currentDisplayBall && (
+                        {/* Covers the name label instead of adding a row, so selecting never grows the page. */}
+                        {showTierEquip && (
                           <button
                             disabled={settingBall}
                             onClick={() => handleSetBall(ball.id)}
-                            className="equip-btn"
+                            className="equip-btn absolute top-[62px] left-1/2 -translate-x-1/2 z-10"
                           >
                             {settingBall ? '…' : 'Equip'}
                           </button>
@@ -304,7 +318,7 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
                 })}
               </div>
               {!isGuest && stats ? (
-                <div className="mt-4">
+                <div className="mt-3">
                   <div
                     className="pixel-progress"
                     role="progressbar"
@@ -331,26 +345,29 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
 
           {/* Achievement balls */}
           <section>
-            <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-4">Achievement Balls</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2">
+            <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-2">Achievement Balls</h3>
+            {/* Phones: one short row per ball. sm+: cards, one row of five on desktop. */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-1 sm:gap-3 sm:pt-2">
               {achievementBalls.map(ball => {
                 const isUnlocked = ball.status === 'unlocked'
                 const isSelected = selectedBall === ball.id
                 const isDisplay = !isGuest && currentDisplayBall === ball.id
                 const canSelect = !isGuest && isUnlocked
+                // The Equip action takes the hint's place so selecting never grows the page.
+                const showEquip = isSelected && ball.id !== currentDisplayBall
 
                 return (
                   <div
                     key={ball.id}
                     aria-current={isDisplay ? 'true' : undefined}
-                    className={`relative border-2 flex flex-col items-center ${
+                    className={`relative border-2 flex flex-row sm:flex-col items-center ${
                       isUnlocked
                         ? 'border-gray-300 bg-white hover:border-pokemon-blue'
                         : 'border-gray-200 bg-gray-50 opacity-75'
                     } ${isSelected ? 'border-pokemon-blue outline outline-2 outline-pokemon-blue' : ''} ${isDisplay ? 'equipped-frame' : ''}`}
                   >
                     {isDisplay && (
-                      <span className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap z-10"><EquippedRibbon /></span>
+                      <span className="absolute -top-2 right-2 sm:-top-3 sm:right-auto sm:left-1/2 sm:-translate-x-1/2 whitespace-nowrap z-10"><EquippedRibbon /></span>
                     )}
                     <button
                       type="button"
@@ -358,38 +375,40 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
                       onClick={() => canSelect && setSelectedBall(isSelected ? null : ball.id)}
                       aria-label={`${ball.display_name}${isUnlocked ? '' : ', locked'}${isDisplay ? ', equipped' : ''}`}
                       aria-pressed={canSelect ? isSelected : undefined}
-                      className={`w-full p-4 flex flex-col items-center gap-2 pixel-focus ${canSelect ? 'cursor-pointer' : 'cursor-default'}`}
+                      className={`flex-1 min-w-0 w-full min-h-[44px] px-2 py-1 sm:p-3 flex flex-row sm:flex-col items-center gap-3 sm:gap-2 text-left sm:text-center pixel-focus ${canSelect ? 'cursor-pointer' : 'cursor-default'}`}
                     >
                       {isUnlocked ? (
                         <img
                           src={ballSpriteUrl(ball.id)}
                           alt=""
-                          className="sprite w-12 h-12"
+                          className="sprite w-8 h-8 sm:w-12 sm:h-12 flex-shrink-0"
                           decoding="async"
                           width={48}
                           height={48}
                           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
                         />
                       ) : (
-                        <div className="w-12 h-12 pixel-circle bg-gray-300 flex items-center justify-center">
+                        <div className="w-8 h-8 sm:w-12 sm:h-12 flex-shrink-0 pixel-circle bg-gray-300 flex items-center justify-center">
                           <span className="text-gray-500 text-lg" aria-hidden="true">?</span>
                         </div>
                       )}
-                      <span className={`text-sm font-bold text-center ${isUnlocked ? 'text-gray-800' : 'text-gray-400'}`}>
-                        {ball.display_name}
+                      <span className="min-w-0 flex flex-col sm:items-center gap-0.5 sm:gap-2">
+                        <span className={`text-sm font-bold ${isUnlocked ? 'text-gray-800' : 'text-gray-400'}`}>
+                          {ball.display_name}
+                        </span>
+                        {ball.hint && !showEquip && (
+                          <span className={`text-[10px] sm:text-xs leading-snug ${isUnlocked ? 'text-gray-500' : 'text-gray-400'}`}>
+                            {ball.hint}
+                          </span>
+                        )}
                       </span>
-                      {ball.hint && (
-                        <p className={`text-xs text-center leading-snug ${isUnlocked ? 'text-gray-500' : 'text-gray-400'}`}>
-                          {ball.hint}
-                        </p>
-                      )}
                     </button>
-                    {isSelected && ball.id !== currentDisplayBall && (
-                      <div className="w-full px-4 pb-4">
+                    {showEquip && (
+                      <div className="flex-shrink-0 pr-2 sm:pr-0 sm:w-full sm:px-3 sm:pb-3">
                         <button
                           disabled={settingBall}
                           onClick={() => handleSetBall(ball.id)}
-                          className="equip-btn w-full"
+                          className="equip-btn sm:w-full"
                         >
                           {settingBall ? '…' : 'Equip'}
                         </button>
