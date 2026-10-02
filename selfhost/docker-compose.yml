@@ -96,6 +96,9 @@ services:
       GOTRUE_MAILER_AUTOCONFIRM: "false"
       GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED: "true"
       GOTRUE_RATE_LIMIT_EMAIL_SENT: 30
+      # Rate-limit per real client IP (set by Cloudflare), not per proxy
+      GOTRUE_RATE_LIMIT_HEADER: CF-Connecting-IP
+      GOTRUE_MAILER_EXTERNAL_HOSTS: wurmple-api.ajmsd.space
 
       GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL}
       GOTRUE_SMTP_HOST: ${SMTP_HOST}
