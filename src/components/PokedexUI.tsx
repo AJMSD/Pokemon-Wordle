@@ -5,6 +5,7 @@ import HintPanel from './HintPanel'
 import GuessList from './GuessList'
 import useToast from '../hooks/useToast'
 import useGame from '../hooks/useGame'
+import { ballSpriteUrl } from '../lib/sprites'
 
 interface PokedexUIProps {
   onShowCollection?: () => void
@@ -237,16 +238,17 @@ const PokedexUI: React.FC<PokedexUIProps> = ({
     }
   }
 
-  // Get pokemon image for display
-  const pokemonImage = dailyPokemon?.sprites?.other?.['official-artwork']?.front_default || 
-                      dailyPokemon?.sprites?.front_default;
+  // Prefer the pixel game sprite; fall back to official artwork.
+  const pixelSprite = dailyPokemon?.sprites?.front_default
+  const pokemonImage = pixelSprite || dailyPokemon?.sprites?.other?.['official-artwork']?.front_default
+  const pokemonImageClass = pixelSprite ? 'pokemon-image pokemon-image--sprite' : 'pokemon-image'
 
   // Render different content based on device and game status
   const renderMainScreenContent = () => {
     if (isMobile) {
       return gameStatus === 'won' 
         ? <div className="pokemon-image-container">
-            <img src={pokemonImage} alt={dailyPokemon?.name} className="pokemon-image" />
+            <img src={pokemonImage} alt={dailyPokemon?.name} className={pokemonImageClass} />
           </div>
         : <div className="mobile-hint-panel">
             <HintPanel />
@@ -254,7 +256,7 @@ const PokedexUI: React.FC<PokedexUIProps> = ({
     } else {
       return gameStatus === 'won' 
         ? <div className="pokemon-image-container">
-            <img src={pokemonImage} alt={dailyPokemon?.name} className="pokemon-image" />
+            <img src={pokemonImage} alt={dailyPokemon?.name} className={pokemonImageClass} />
           </div>
         : <div className="unknown-pokemon">?</div>;
     }
@@ -363,7 +365,7 @@ const PokedexUI: React.FC<PokedexUIProps> = ({
             <div className="flex items-center justify-between bg-orange-50 border border-orange-300 text-orange-800 text-sm rounded-lg px-3 py-2 mb-2">
               <span>⚠️ That game state changed elsewhere. Refresh to continue.</span>
               <button
-                className="underline text-orange-700 font-medium ml-2"
+                className="underline text-orange-700 ml-2"
                 onClick={() => clearStaleLock()}
               >
                 Dismiss
@@ -382,35 +384,22 @@ const PokedexUI: React.FC<PokedexUIProps> = ({
                 setSelectedIndex(-1)
               }}
               onKeyDown={handleKeyDown}
-              className="guess-input"
+              className="guess-input pixel-input"
               placeholder="Enter Pokémon name..."
               autoComplete="off"
               autoFocus
               disabled={gameStatus !== 'playing' || isSubmitting || staleLock || !!rateLimitSeconds}
             />
 
-            {/* Masterball submit button */}
-            <div className="masterball-button-container">
-              <button
-                type="submit"
-                className="masterball-button"
-                disabled={currentGuess.trim() === '' || gameStatus !== 'playing' || isSubmitting || staleLock || !!rateLimitSeconds}
-                aria-label="Submit guess"
-              >
-                <div className="masterball">
-                  <div className="masterball-top">
-                    <div className="masterball-m">M</div>
-                    <div className="masterball-dots">
-                      <div className="masterball-dot"></div>
-                      <div className="masterball-dot"></div>
-                    </div>
-                  </div>
-                  <div className="masterball-stripe"></div>
-                  <div className="masterball-bottom"></div>
-                  <div className="masterball-button-center"></div>
-                </div>
-              </button>
-            </div>
+            {/* Master Ball submit button */}
+            <button
+              type="submit"
+              className="submit-ball-btn pixel-btn"
+              disabled={currentGuess.trim() === '' || gameStatus !== 'playing' || isSubmitting || staleLock || !!rateLimitSeconds}
+              aria-label="Submit guess"
+            >
+              <img src={ballSpriteUrl('master-ball')} alt="" className="sprite" width={60} height={60} />
+            </button>
             
             {/* Suggestions dropdown */}
             {showSuggestions && suggestions.length > 0 && (

@@ -193,7 +193,7 @@ function App() {
         <div className="flex items-center justify-between bg-yellow-50 border border-yellow-300 text-yellow-800 text-sm rounded-lg px-4 py-3 mb-4 gap-4">
           <span>
             Verify your email to start tracking your Trainer stats.{' '}
-            <button onClick={handleResendVerification} className="underline font-medium hover:text-yellow-900">
+            <button onClick={handleResendVerification} className="underline hover:text-yellow-900">
               Resend verification
             </button>
           </span>

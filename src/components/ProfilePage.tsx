@@ -65,7 +65,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
         {/* Avatar + username */}
         <div className="flex flex-col items-center gap-3 mb-6">
           {avatarSrc ? (
-            <img src={avatarSrc} alt="avatar" className="w-24 h-24 rounded-xl border-2 border-gray-100 shadow-sm" decoding="async" width={96} height={96} />
+            <img src={avatarSrc} alt="avatar" className="sprite w-24 h-24 rounded-xl border-2 border-gray-100 shadow-sm" decoding="async" width={96} height={96} />
           ) : (
             <DefaultAvatar size={96} />
           )}
@@ -75,17 +75,17 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
               <img
                 src={ballSpriteUrl(displayBall)}
                 alt={ballName}
-                className="w-4 h-4 object-contain"
+                className="sprite w-4 h-4"
                 decoding="async"
                 width={16}
                 height={16}
               />
-              <p className="text-xs text-gray-500 font-medium">{ballName}</p>
+              <p className="text-xs text-gray-500">{ballName}</p>
             </div>
           </div>
           <button
             onClick={() => setShowPicker(true)}
-            className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold px-3 py-1.5 rounded-full transition-colors"
+            className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold px-3 py-1.5 rounded-full transition-colors"
           >
             Change Avatar
           </button>
@@ -94,7 +94,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
         {/* Stats section */}
         {isGuest ? (
           <div className="text-center py-6 bg-gray-50 rounded-xl">
-            <p className="text-sm font-semibold text-gray-700 mb-0.5">Sign in to track your stats</p>
+            <p className="text-sm font-bold text-gray-700 mb-0.5">Sign in to track your stats</p>
             <p className="text-xs text-gray-400">Win streaks, guesses, and more</p>
           </div>
         ) : isInitialLoading ? (
@@ -115,7 +115,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
                   onClick={() => {
                     void refreshProfile()
                   }}
-                  className="text-xs text-pokemon-red font-semibold hover:underline"
+                  className="text-xs text-pokemon-red font-bold hover:underline"
                 >
                   Retry
                 </button>
@@ -142,7 +142,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
                     <p className="text-xs text-gray-500 mt-0.5">Avg Guesses</p>
                   </div>
                 </div>
-                <div className="bg-gray-50 rounded-xl px-3 py-2.5 text-xs text-gray-500 text-center font-medium">
+                <div className="bg-gray-50 rounded-xl px-3 py-2.5 text-xs text-gray-500 text-center">
                   {stats.total_participations} played · {stats.total_wins}W · {totalLosses}L
                 </div>
               </>

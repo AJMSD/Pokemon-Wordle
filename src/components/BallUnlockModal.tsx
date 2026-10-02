@@ -22,7 +22,7 @@ const BallUnlockModal: React.FC<BallUnlockModalProps> = ({ ballName, ballId, vis
             <img
               src={ballSpriteUrl(ballId)}
               alt={ballName}
-              className="w-16 h-16 object-contain"
+              className="sprite w-16 h-16"
               loading="lazy"
               decoding="async"
               width={64}
@@ -32,7 +32,7 @@ const BallUnlockModal: React.FC<BallUnlockModalProps> = ({ ballName, ballId, vis
         </div>
         <h2 className="text-2xl font-bold text-pokemon-red mb-2">New Ball Unlocked!</h2>
         <p className="text-gray-500 text-sm mb-2">A new ball has been added to your case!</p>
-        <p className="text-gray-800 text-lg font-semibold mb-6">{ballName}</p>
+        <p className="text-gray-800 text-lg font-bold mb-6">{ballName}</p>
         <button
           onClick={onClose}
           className="bg-pokemon-red text-white font-bold px-6 py-2 rounded-full hover:bg-red-700 transition-colors"

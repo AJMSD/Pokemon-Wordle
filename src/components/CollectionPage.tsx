@@ -171,7 +171,7 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
     <div className="max-w-2xl mx-auto px-4 py-6">
       <button
         onClick={onBack}
-        className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-pokemon-red transition-colors mb-6"
+        className="flex items-center gap-2 text-sm text-gray-600 hover:text-pokemon-red transition-colors mb-6"
       >
         ← Back to Game
       </button>
@@ -234,7 +234,7 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
 
           {/* Standard tier track */}
           <section className="mb-8">
-            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Streak Tier</h3>
+            <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-4">Streak Tier</h3>
             <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
               <div className="flex w-full items-start pt-7">
                 {standardBalls.map((ball, i) => {
@@ -329,7 +329,7 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
 
           {/* Achievement balls */}
           <section>
-            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Achievement Balls</h3>
+            <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-4">Achievement Balls</h3>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2">
               {achievementBalls.map(ball => {
                 const isUnlocked = ball.status === 'unlocked'
@@ -373,7 +373,7 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
                           <span className="text-gray-500 text-lg" aria-hidden="true">?</span>
                         </div>
                       )}
-                      <span className={`text-sm font-semibold text-center ${isUnlocked ? 'text-gray-800' : 'text-gray-400'}`}>
+                      <span className={`text-sm font-bold text-center ${isUnlocked ? 'text-gray-800' : 'text-gray-400'}`}>
                         {ball.display_name}
                       </span>
                       {ball.hint && (

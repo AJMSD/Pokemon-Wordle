@@ -18,21 +18,21 @@ const TierPromptToast: React.FC<TierPromptToastProps> = ({ tierId, tierName, onS
         <img
           src={ballSpriteUrl(tierId)}
           alt={tierName}
-          className="w-10 h-10 flex-shrink-0 object-contain"
+          className="sprite w-10 h-10 flex-shrink-0"
         />
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-900">You've reached {tierName}!</p>
+          <p className="text-sm font-bold text-gray-900">You've reached {tierName}!</p>
           <p className="text-xs text-gray-500">Switch your display ball?</p>
           <div className="flex gap-2 mt-2">
             <button
               onClick={onSwitch}
-              className="text-xs bg-pokemon-red text-white font-semibold px-3 py-1 rounded-full hover:bg-red-700 transition-colors"
+              className="text-xs bg-pokemon-red text-white font-bold px-3 py-1 rounded-full hover:bg-red-700 transition-colors"
             >
               Switch
             </button>
             <button
               onClick={onDismiss}
-              className="text-xs text-gray-500 font-medium px-3 py-1 rounded-full hover:bg-gray-100 transition-colors border border-gray-200"
+              className="text-xs text-gray-500 px-3 py-1 rounded-full hover:bg-gray-100 transition-colors border border-gray-200"
             >
               Later
             </button>

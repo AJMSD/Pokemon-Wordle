@@ -35,7 +35,6 @@ export default {
       },
       fontFamily: {
         sans: ['Inter', 'sans-serif'],
-        pokemon: ['Flexo', 'sans-serif'],
         pixel: ['Silkscreen', 'sans-serif'],
       }
     },

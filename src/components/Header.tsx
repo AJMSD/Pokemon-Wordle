@@ -50,7 +50,7 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
         <img
           src={`${import.meta.env.BASE_URL}logo.png`}
           alt="Wurmple logo"
-          className="h-7 w-auto object-contain flex-shrink-0"
+          className="sprite h-7 w-auto flex-shrink-0"
         />
         <h1 className="hidden sm:block font-pixel text-lg sm:text-xl md:text-2xl text-pokemon-red tracking-wide leading-none">Wurmple</h1>
       </button>
@@ -65,7 +65,7 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
           <img
             src={ballSpriteUrl(displayBall)}
             alt={showAsUser ? `Equipped: ${ballName}` : ballName}
-            className="w-6 h-6 object-contain"
+            className="sprite w-6 h-6"
             decoding="async"
             width={24}
             height={24}
@@ -75,7 +75,7 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
               <img
                 src={streakIcon}
                 alt="Streak"
-                className="w-4 h-4 object-contain"
+                className="sprite w-4 h-4"
                 decoding="async"
                 width={16}
                 height={16}
@@ -84,7 +84,7 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
             </span>
           )}
           {!showAsUser && (
-            <span className="font-pixel text-sm font-medium text-gray-600">Guest</span>
+            <span className="font-pixel text-sm text-gray-600">Guest</span>
           )}
         </div>
 
@@ -116,7 +116,7 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
                 <img
                   src={avatarSrc}
                   alt="Trainer avatar"
-                  className="w-8 h-8 rounded-full object-cover border border-gray-200"
+                  className="sprite w-8 h-8 rounded-full object-cover border border-gray-200"
                   decoding="async"
                   width={32}
                   height={32}
@@ -142,7 +142,7 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
               aria-label="Sign In"
             >
               <LogIn size={16} />
-              <span className="text-sm font-semibold hidden sm:inline">Sign In</span>
+              <span className="text-sm font-bold hidden sm:inline">Sign In</span>
             </button>
           </div>
         ) : (

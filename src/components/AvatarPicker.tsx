@@ -67,7 +67,7 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
             placeholder="Search Pokémon..."
             className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-pokemon-red/40"
           />
-          <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer select-none whitespace-nowrap">
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none whitespace-nowrap">
             <input
               type="checkbox"
               checked={isShiny}
@@ -95,7 +95,7 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
               <img
                 src={spriteUrl(p.id)}
                 alt={p.name}
-                className="w-full h-auto"
+                className="sprite w-full h-auto"
                 loading="lazy"
               />
               <span className="text-[9px] text-gray-500 truncate w-full text-center leading-tight mt-0.5">{p.name}</span>
@@ -106,14 +106,14 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
         <div className="flex gap-3">
           <button
             onClick={onClose}
-            className="flex-1 py-2 rounded-lg border border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 transition-colors"
+            className="flex-1 py-2 rounded-lg border border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleConfirm}
             disabled={!selected || saving}
-            className="flex-1 py-2 rounded-lg bg-pokemon-red text-white font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 py-2 rounded-lg bg-pokemon-red text-white font-bold hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {saving ? 'Saving...' : 'Confirm'}
           </button>
