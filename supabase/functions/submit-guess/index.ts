@@ -1,23 +1,39 @@
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { checkRateLimit } from '../_shared/rateLimit.ts';
+import { getAuthUser, jwtSubject } from '../_shared/auth.ts';
+import { ensureSessionTarget, resolveTarget, revealedHints, targetColumns } from '../_shared/target.ts';
 import { checkBallUnlocks } from '../../../src/logic/ballLogic.ts';
 import { calcWinStreak, calcParticipationStreak, calcWinsAfterLoss } from '../../../src/logic/streakLogic.ts';
 import { isStaleSession } from '../../../src/logic/staleDeviceCheck.ts';
+import { POKEMON_NAMES } from '../../../src/data/pokemonNames.ts';
 
-async function awardBall(
+// Inserts the balls in one statement; returns only the ones that were new.
+async function awardBalls(
   supabaseAdmin: SupabaseClient,
   userId: string,
-  ballId: string
-): Promise<boolean> {
-  const { error } = await supabaseAdmin
+  ballIds: string[]
+): Promise<string[]> {
+  if (ballIds.length === 0) return [];
+  const { data, error } = await supabaseAdmin
     .from('ball_unlocks')
-    .insert({ user_id: userId, ball_id: ballId });
-  return !error; // false if already unlocked (unique violation)
+    .upsert(
+      ballIds.map(ball_id => ({ user_id: userId, ball_id })),
+      { onConflict: 'user_id,ball_id', ignoreDuplicates: true }
+    )
+    .select('ball_id');
+  if (error) {
+    console.error(JSON.stringify({ fn: 'submit-guess', event: 'award_balls_failed', error: error.message }));
+    return [];
+  }
+  return (data ?? []).map((row: { ball_id: string }) => row.ball_id);
 }
 
 const MAX_GUESSES = 10;
 const HINT_THRESHOLDS = { ability: 3, generation: 6, type: 9 };
+
+// Bundled list (same normalization as the client), so validation never waits on PokéAPI.
+const POKEMON_NAME_SET = new Set(POKEMON_NAMES);
 
 function getClientIP(req: Request): string {
   return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
@@ -33,50 +49,15 @@ function normalizeName(name: string): string {
     );
 }
 
-let pokemonAllowlistPromise: Promise<Set<string> | null> | null = null;
-
-async function loadPokemonAllowlist(): Promise<Set<string> | null> {
-  try {
-    const res = await fetch('https://pokeapi.co/api/v2/pokemon?limit=1025');
-    if (!res.ok) return null;
-    const data = await res.json();
-    const names = Array.isArray(data?.results)
-      ? data.results
-          .map((entry: { name?: string }) => normalizeName(entry?.name ?? ''))
-          .filter(Boolean)
-      : [];
-    return new Set(names);
-  } catch {
-    return null;
-  }
-}
-
-async function getPokemonAllowlist(): Promise<Set<string> | null> {
-  if (!pokemonAllowlistPromise) {
-    pokemonAllowlistPromise = loadPokemonAllowlist();
-  }
-
-  const allowlist = await pokemonAllowlistPromise;
-  if (!allowlist) {
-    // Retry on later request when the warmup fetch fails.
-    pokemonAllowlistPromise = null;
-  }
-  return allowlist;
-}
-
-async function isValidPokemon(name: string): Promise<boolean> {
-  const allowlist = await getPokemonAllowlist();
-  // Don't reject valid guesses due to upstream list outages.
-  if (!allowlist) return true;
-  return allowlist.has(name);
-}
-
-function getTodayJST(): string {
-  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
-}
-
 function getYesterdayJST(): string {
   return new Date(Date.now() + 9 * 3600 * 1000 - 24 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+function json(body: unknown, status: number, extraHeaders: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json', ...extraHeaders },
+  });
 }
 
 Deno.serve(async (req: Request) => {
@@ -84,10 +65,7 @@ Deno.serve(async (req: Request) => {
   if (cors) return cors;
 
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return json({ error: 'Method not allowed' }, 405);
   }
 
   const supabaseAdmin = createClient(
@@ -102,44 +80,24 @@ Deno.serve(async (req: Request) => {
     const { guess, session_version, puzzle_date_key, guest_id } = body;
 
     if (!guess || !puzzle_date_key) {
-      return new Response(JSON.stringify({ error: 'Missing required fields' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return json({ error: 'Missing required fields' }, 400);
     }
 
     // Only today's puzzle (JST) can be played; prevents replaying past days to farm stats.
     const todayKey = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
     if (puzzle_date_key !== todayKey) {
-      return new Response(JSON.stringify({ error: "This puzzle has ended. Refresh for today's Pokémon." }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return json({ error: "This puzzle has ended. Refresh for today's Pokémon." }, 400);
     }
 
-    // Determine caller identity and verification status
-    let userId: string | null = null;
-    let isVerified = false;
+    // The token's subject lets the session load start alongside getUser().
     const authHeader = req.headers.get('Authorization');
-
-    if (authHeader) {
-      const supabaseUser = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_ANON_KEY')!,
-        { global: { headers: { Authorization: authHeader } } }
-      );
-      const { data: { user } } = await supabaseUser.auth.getUser();
-      userId = user?.id ?? null;
-      isVerified = !!user?.email_confirmed_at;
-    }
-
+    const userId = jwtSubject(authHeader);
     const isGuest = !userId;
     if (isGuest && !guest_id) {
-      return new Response(JSON.stringify({ error: 'guest_id required for unauthenticated requests' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return json({ error: 'guest_id required for unauthenticated requests' }, 400);
     }
+
+    const sessionFilter = isGuest ? { guest_id: guest_id } : { user_id: userId };
 
     // Rate limit: 10 guesses/minute per user; guests are keyed by IP, which many
     // players can share (mobile CGNAT, schools), so they get a larger bucket.
@@ -147,41 +105,31 @@ Deno.serve(async (req: Request) => {
       ? `submit-guess:user:${userId}`
       : `submit-guess:ip:${getClientIP(req)}`;
 
-    const { allowed, retryAfter } = await checkRateLimit(supabaseAdmin, rateLimitKey, userId ? 10 : 30, 60);
-    if (!allowed) {
-      return new Response(
-        JSON.stringify({ error: 'Rate limit exceeded', retry_after: retryAfter }),
-        {
-          status: 429,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': String(retryAfter) },
-        }
+    const [user, rateLimit, sessionResult] = await Promise.all([
+      userId ? getAuthUser(authHeader) : Promise.resolve(null),
+      checkRateLimit(supabaseAdmin, rateLimitKey, userId ? 10 : 30, 60),
+      supabaseAdmin
+        .from('daily_sessions')
+        .select('*')
+        .match({ ...sessionFilter, puzzle_date_key })
+        .maybeSingle(),
+    ]);
+
+    if (userId && user?.id !== userId) {
+      return json({ error: 'Invalid or expired token' }, 401);
+    }
+    const isVerified = !!user?.email_confirmed_at;
+
+    if (!rateLimit.allowed) {
+      return json(
+        { error: 'Rate limit exceeded', retry_after: rateLimit.retryAfter },
+        429,
+        { 'Retry-After': String(rateLimit.retryAfter) }
       );
     }
 
-    // Load today's puzzle
-    const { data: puzzle } = await supabaseAdmin
-      .from('daily_puzzles')
-      .select('id, pokemon_name, pokemon_data')
-      .eq('puzzle_date_key', puzzle_date_key)
-      .single();
-
-    if (!puzzle) {
-      return new Response(JSON.stringify({ error: 'Puzzle not found for date' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Load or create session
-    const sessionFilter = isGuest
-      ? { guest_id: guest_id }
-      : { user_id: userId };
-
-    let { data: session } = await supabaseAdmin
-      .from('daily_sessions')
-      .select('*')
-      .match({ ...sessionFilter, puzzle_date_key })
-      .single();
+    let session = sessionResult.data;
+    const target = await resolveTarget(supabaseAdmin, puzzle_date_key, userId ?? guest_id, session);
 
     if (!session) {
       const { data: newSession } = await supabaseAdmin
@@ -189,7 +137,7 @@ Deno.serve(async (req: Request) => {
         .insert({
           ...sessionFilter,
           puzzle_date_key,
-          puzzle_id: puzzle.id,
+          ...targetColumns(target),
           guesses: [],
           hint_flags: { ability: false, generation: false, type: false },
           completion_state: 'playing',
@@ -198,101 +146,42 @@ Deno.serve(async (req: Request) => {
         .select()
         .single();
       session = newSession;
+      if (!session) {
+        // Lost a create race with a concurrent request; use its row.
+        ({ data: session } = await supabaseAdmin
+          .from('daily_sessions')
+          .select('*')
+          .match({ ...sessionFilter, puzzle_date_key })
+          .single());
+      }
+    } else {
+      await ensureSessionTarget(supabaseAdmin, session, target);
     }
 
     // Optimistic concurrency check
     if (isStaleSession(session_version, session.version)) {
-      return new Response(
-        JSON.stringify({ error: 'stale_session', current_version: session.version }),
-        {
-          status: 409,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
+      return json({ error: 'stale_session', current_version: session.version }, 409);
     }
 
     // Reject if game already complete
     if (session.completion_state !== 'playing') {
-      return new Response(
-        JSON.stringify({ error: 'Game already completed', completion_state: session.completion_state }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
-    }
-
-    const newlyUnlocked: string[] = [];
-
-    // Participation stat: increment on first guess of the day (auth + verified only)
-    if (!isGuest && userId && isVerified && session.guesses.length === 0) {
-      const { data: stats } = await supabaseAdmin
-        .from('user_stats')
-        .select('*')
-        .eq('user_id', userId)
-        .single();
-
-      if (stats && stats.last_participation_date !== puzzle_date_key) {
-        const yesterdayJST = getYesterdayJST();
-        const partStreak = calcParticipationStreak(
-          stats.last_participation_date ?? '',
-          yesterdayJST,
-          stats.participation_streak ?? 0
-        );
-
-        // Net Ball: track Water/Bug-type days
-        const types: string[] = (puzzle.pokemon_data as { types?: string[] }).types ?? [];
-        const isWaterOrBug = types.some(t => t === 'water' || t === 'bug');
-        const newWaterBugCount = (stats.water_bug_daily_wins ?? 0) + (isWaterOrBug ? 1 : 0);
-
-        await supabaseAdmin.from('user_stats').update({
-          total_participations: (stats.total_participations ?? 0) + 1,
-          participation_streak: partStreak,
-          max_participation_streak: Math.max(stats.max_participation_streak ?? 0, partStreak),
-          last_participation_date: puzzle_date_key,
-          ...(isWaterOrBug ? { water_bug_daily_wins: newWaterBugCount } : {}),
-        }).eq('user_id', userId);
-
-        const { data: profile } = partStreak >= 7
-          ? await supabaseAdmin.from('profiles').select('id').eq('id', userId).single()
-          : { data: null };
-
-        const participationBalls = checkBallUnlocks({
-          completionState: 'playing',
-          guessCount: 0,
-          partStreak,
-          waterBugCount: newWaterBugCount,
-          isWaterOrBug,
-          winsAfterLoss: 0,
-          hasProfile: !!profile,
-        });
-        for (const ball of participationBalls) {
-          if (await awardBall(supabaseAdmin, userId, ball)) newlyUnlocked.push(ball);
-        }
-      }
+      return json({ error: 'Game already completed', completion_state: session.completion_state }, 400);
     }
 
     const normalizedGuess = normalizeName(guess);
 
     // Validate duplicate
     if (session.guesses.includes(normalizedGuess)) {
-      return new Response(JSON.stringify({ error: 'Duplicate guess' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return json({ error: 'Duplicate guess' }, 400);
     }
 
     // Validate it's a real Pokémon
-    const valid = await isValidPokemon(normalizedGuess);
-    if (!valid) {
-      return new Response(JSON.stringify({ error: 'Not a valid Pokémon name' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    if (!POKEMON_NAME_SET.has(normalizedGuess)) {
+      return json({ error: 'Not a valid Pokémon name' }, 400);
     }
 
     const newGuesses = [...session.guesses, normalizedGuess];
-    const isCorrect = normalizedGuess === normalizeName(puzzle.pokemon_name);
+    const isCorrect = normalizedGuess === normalizeName(target.name);
     const isExhausted = newGuesses.length >= MAX_GUESSES;
 
     let completionState: 'playing' | 'won' | 'lost' = 'playing';
@@ -307,7 +196,8 @@ Deno.serve(async (req: Request) => {
 
     const newVersion = session.version + 1;
 
-    await supabaseAdmin
+    // Guarded on the version we read, so a concurrent submit can't be overwritten.
+    const { data: updated } = await supabaseAdmin
       .from('daily_sessions')
       .update({
         guesses: newGuesses,
@@ -315,24 +205,70 @@ Deno.serve(async (req: Request) => {
         completion_state: completionState,
         version: newVersion,
       })
-      .match({ ...sessionFilter, puzzle_date_key });
+      .eq('id', session.id)
+      .eq('version', session.version)
+      .select('id');
+
+    if (!updated || updated.length === 0) {
+      return json({ error: 'stale_session' }, 409);
+    }
+
+    const ballsToAward: string[] = [];
+    const tracksStats = !isGuest && userId && isVerified;
+
+    // Participation stat: increment on first guess of the day (auth + verified only)
+    if (tracksStats && session.guesses.length === 0) {
+      const [{ data: stats }, { data: profile }] = await Promise.all([
+        supabaseAdmin.from('user_stats').select('*').eq('user_id', userId).single(),
+        supabaseAdmin.from('profiles').select('id').eq('id', userId).maybeSingle(),
+      ]);
+
+      if (stats && stats.last_participation_date !== puzzle_date_key) {
+        const yesterdayJST = getYesterdayJST();
+        const partStreak = calcParticipationStreak(
+          stats.last_participation_date ?? '',
+          yesterdayJST,
+          stats.participation_streak ?? 0
+        );
+
+        // Net Ball: track Water/Bug-type days
+        const types: string[] = target.data.types ?? [];
+        const isWaterOrBug = types.some(t => t === 'water' || t === 'bug');
+        const newWaterBugCount = (stats.water_bug_daily_wins ?? 0) + (isWaterOrBug ? 1 : 0);
+
+        await supabaseAdmin.from('user_stats').update({
+          total_participations: (stats.total_participations ?? 0) + 1,
+          participation_streak: partStreak,
+          max_participation_streak: Math.max(stats.max_participation_streak ?? 0, partStreak),
+          last_participation_date: puzzle_date_key,
+          ...(isWaterOrBug ? { water_bug_daily_wins: newWaterBugCount } : {}),
+        }).eq('user_id', userId);
+
+        ballsToAward.push(...checkBallUnlocks({
+          completionState: 'playing',
+          guessCount: 0,
+          partStreak,
+          waterBugCount: newWaterBugCount,
+          isWaterOrBug,
+          winsAfterLoss: 0,
+          hasProfile: partStreak >= 7 && !!profile,
+        }));
+      }
+    }
 
     // On completion, archive result and update stats (auth + verified users only)
-    if (completionState !== 'playing' && !isGuest && userId && isVerified) {
-      await supabaseAdmin.from('daily_results').upsert({
-        user_id: userId,
-        puzzle_date_key,
-        pokemon_name: puzzle.pokemon_name,
-        guesses: newGuesses,
-        guess_count: newGuesses.length,
-        result: completionState,
-      });
-
-      const { data: stats } = await supabaseAdmin
-        .from('user_stats')
-        .select('*')
-        .eq('user_id', userId)
-        .single();
+    if (completionState !== 'playing' && tracksStats) {
+      const [, { data: stats }] = await Promise.all([
+        supabaseAdmin.from('daily_results').upsert({
+          user_id: userId,
+          puzzle_date_key,
+          pokemon_name: target.name,
+          guesses: newGuesses,
+          guess_count: newGuesses.length,
+          result: completionState,
+        }),
+        supabaseAdmin.from('user_stats').select('*').eq('user_id', userId).single(),
+      ]);
 
       let newWinsAfterLoss = 0;
 
@@ -370,7 +306,7 @@ Deno.serve(async (req: Request) => {
         }).eq('user_id', userId);
       }
 
-      const completionBalls = checkBallUnlocks({
+      ballsToAward.push(...checkBallUnlocks({
         completionState,
         guessCount: newGuesses.length,
         partStreak: 0,
@@ -378,44 +314,33 @@ Deno.serve(async (req: Request) => {
         isWaterOrBug: false,
         winsAfterLoss: newWinsAfterLoss,
         hasProfile: false,
-      });
-      for (const ball of completionBalls) {
-        if (await awardBall(supabaseAdmin, userId, ball)) newlyUnlocked.push(ball);
-      }
+      }));
     }
 
-    // Build hints to return based on revealed flags
-    const hints: Record<string, unknown> = {};
-    if (hintFlags.ability) hints.ability = puzzle.pokemon_data.ability;
-    if (hintFlags.generation) hints.generation = puzzle.pokemon_data.generation;
-    if (hintFlags.type) hints.types = puzzle.pokemon_data.types;
+    const newlyUnlocked = tracksStats
+      ? await awardBalls(supabaseAdmin, userId!, [...new Set(ballsToAward)])
+      : [];
 
     // Return answer only when game is complete
     const responseBody: Record<string, unknown> = {
       guesses: newGuesses,
       hint_flags: hintFlags,
-      hints,
+      hints: revealedHints(hintFlags, target.data),
       completion_state: completionState,
       version: newVersion,
     };
 
     if (completionState !== 'playing') {
-      responseBody.pokemon_name = puzzle.pokemon_name;
+      responseBody.pokemon_name = target.name;
     }
 
     responseBody.newly_unlocked_balls = newlyUnlocked;
 
     console.log(JSON.stringify({ fn: 'submit-guess', method: req.method, user_id: userId, status: 200, duration_ms: Date.now() - start }));
 
-    return new Response(JSON.stringify(responseBody), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return json(responseBody, 200);
   } catch (err) {
     console.error(JSON.stringify({ fn: 'submit-guess', error: String(err), status: 500 }));
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return json({ error: 'Internal server error' }, 500);
   }
 });

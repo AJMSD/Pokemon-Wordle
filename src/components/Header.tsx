@@ -42,11 +42,11 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
   const handleSignOut = boot ? undefined : (onSignOut ?? signOut)
 
   return (
-    <header className="sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6 py-2 border-b-2 border-gray-900 bg-white mb-3">
+    <header className="sticky top-0 z-30 flex items-center justify-between px-2 sm:px-6 py-1.5 md:py-2 border-b-2 border-gray-900 bg-white mb-2 md:mb-3">
       {/* Left: Logo + title */}
       <button
         onClick={onGoHome}
-        className="flex items-center gap-2 hover:opacity-80 pixel-focus"
+        className="flex items-center gap-2 min-h-[44px] md:min-h-0 hover:opacity-80 pixel-focus"
         aria-label="Go to game"
       >
         <img
@@ -58,7 +58,7 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
       </button>
 
       {/* Right: ball badge + nav + auth */}
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex items-center gap-1 sm:gap-3">
         {/* Ball badge pill */}
         <div
           className="inline-flex items-center gap-1.5 bg-gray-100 px-2.5 py-1"
@@ -96,12 +96,12 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
             <button
               onClick={handleShowCollection}
               aria-disabled={!handleShowCollection || undefined}
-              className="header-icon-btn p-1 text-gray-600 hover:text-pokemon-red pixel-focus"
+              className="header-icon-btn inline-flex items-center justify-center min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 p-1 text-gray-600 hover:text-pokemon-red pixel-focus"
               aria-label="Collection"
             >
               <Archive width={24} height={24} aria-hidden="true" />
             </button>
-            <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-0.5 bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10">
+            <span className="hidden md:block absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-0.5 bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10">
               Collection
             </span>
           </div>
@@ -111,7 +111,7 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
             <button
               onClick={handleShowProfile}
               aria-disabled={!handleShowProfile || undefined}
-              className="header-icon-btn p-1 pixel-focus"
+              className="header-icon-btn inline-flex items-center justify-center min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 p-1 pixel-focus"
               aria-label="Profile"
             >
               {avatarSrc ? (
@@ -129,7 +129,7 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
                 </span>
               )}
             </button>
-            <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-0.5 bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10">
+            <span className="hidden md:block absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-0.5 bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10">
               Profile
             </span>
           </div>
@@ -140,7 +140,7 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
           <div className="relative group">
             <button
               onClick={onShowAuth}
-              className="pixel-btn bg-pokemon-red text-white px-3 py-1 hover:bg-red-700 flex items-center gap-1.5"
+              className="pixel-btn bg-pokemon-red text-white px-3 py-1 min-h-[44px] md:min-h-0 hover:bg-red-700 flex items-center gap-1.5"
               aria-label="Sign In"
             >
               <Login width={24} height={24} aria-hidden="true" />
@@ -152,12 +152,12 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
             <button
               onClick={handleSignOut}
               aria-disabled={!handleSignOut || undefined}
-              className="header-icon-btn p-1 text-gray-500 hover:text-gray-700 pixel-focus"
+              className="header-icon-btn inline-flex items-center justify-center min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 p-1 text-gray-500 hover:text-gray-700 pixel-focus"
               aria-label="Sign Out"
             >
               <Logout width={24} height={24} aria-hidden="true" />
             </button>
-            <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-0.5 bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10">
+            <span className="hidden md:block absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-0.5 bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10">
               Sign Out
             </span>
           </div>

@@ -36,6 +36,8 @@ export default {
       fontFamily: {
         sans: ['Inter', 'sans-serif'],
         pixel: ['Silkscreen', 'sans-serif'],
+        // Pixel face with clearly distinct digits, for numbers Silkscreen makes hard to read.
+        num: ['"Pixelify Sans"', 'Silkscreen', 'monospace'],
       }
     },
   },

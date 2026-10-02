@@ -47,7 +47,7 @@ if changed "${1:-}" supabase/migrations; then
     --db-url "postgresql://postgres:${POSTGRES_PASSWORD}@127.0.0.1:54322/postgres")
 fi
 
-if changed "${1:-}" supabase/functions src/logic selfhost/functions-main; then
+if changed "${1:-}" supabase/functions src/logic src/data selfhost/functions-main; then
   docker compose restart functions
 fi
 

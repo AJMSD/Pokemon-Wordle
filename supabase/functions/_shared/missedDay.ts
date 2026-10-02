@@ -17,12 +17,15 @@ export async function markMissedSessions(
 
   if (!staleSessions || staleSessions.length === 0) return;
 
-  for (const s of staleSessions) {
-    await supabaseAdmin
-      .from('daily_sessions')
-      .update({ completion_state: 'missed', version: s.version + 1 })
-      .eq('id', s.id);
-  }
+  // One statement for all of them. The version bump only has to invalidate
+  // clients still holding a stale copy, so a common value above every row's
+  // current version does the job.
+  const nextVersion = Math.max(...staleSessions.map((s) => s.version)) + 1;
+  await supabaseAdmin
+    .from('daily_sessions')
+    .update({ completion_state: 'missed', version: nextVersion })
+    .in('id', staleSessions.map((s) => s.id))
+    .eq('completion_state', 'playing');
 
   if (userId && isVerified) {
     const latestMissed = staleSessions

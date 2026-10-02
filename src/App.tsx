@@ -107,7 +107,9 @@ function App() {
   useEffect(() => {
     if (!pendingPasswordRecovery && !isGuest && session?.access_token && user?.email_confirmed_at && user.id !== lastSyncedUserId.current) {
       lastSyncedUserId.current = user.id
-      initializeGame().then(() => initializeServerSession(session.access_token))
+      // The server sync doesn't depend on PokéAPI details, so don't wait for them.
+      void initializeGame()
+      void initializeServerSession(session.access_token)
     }
   }, [pendingPasswordRecovery, isGuest, session?.access_token, user?.email_confirmed_at, user?.id, initializeGame, initializeServerSession])
 
@@ -181,15 +183,13 @@ function App() {
   return (
     <div className="mx-auto my-2 md:my-4 flex h-[calc(100dvh-1rem)] md:h-[calc(100dvh-2rem)] w-full max-w-6xl flex-col px-2 py-2 md:px-4 md:py-4 bg-white/70 pixel-frame">
       <OfflineBanner />
-      <div className="hidden md:block">
-        <Header
-          onShowCollection={!isGuest ? () => { setShowCollection(true); setShowProfile(false) } : undefined}
-          onShowProfile={!isGuest ? () => { setShowProfile(true); setShowCollection(false) } : undefined}
-          onShowAuth={() => { setAuthInitialView('login'); setShowAuth(true) }}
-          onGoHome={() => { setShowCollection(false); setShowProfile(false) }}
-          onSignOut={handleSignOut}
-        />
-      </div>
+      <Header
+        onShowCollection={!isGuest ? () => { setShowCollection(true); setShowProfile(false) } : undefined}
+        onShowProfile={!isGuest ? () => { setShowProfile(true); setShowCollection(false) } : undefined}
+        onShowAuth={() => { setAuthInitialView('login'); setShowAuth(true) }}
+        onGoHome={() => { setShowCollection(false); setShowProfile(false) }}
+        onSignOut={handleSignOut}
+      />
       {showUnverifiedBanner && (
         <div className="flex items-center justify-between bg-yellow-50 border-2 border-yellow-600 text-yellow-800 text-sm px-4 py-2 mb-2 gap-4">
           <span>
@@ -209,20 +209,12 @@ function App() {
           {showProfile
             ? (
               <ProfilePage
-                onBack={() => setShowProfile(false)}
                 onTierUpgradeAvailable={(tierId, tierName) => setTierUpgrade({ tierId, tierName })}
               />
             )
             : showCollection
-              ? <CollectionPage onBack={() => setShowCollection(false)} />
-              : (
-                <PokedexUI
-                  onShowCollection={!isGuest ? () => { setShowCollection(true); setShowProfile(false) } : undefined}
-                  onShowProfile={!isGuest ? () => { setShowProfile(true); setShowCollection(false) } : undefined}
-                  onShowAuth={() => { setAuthInitialView('login'); setShowAuth(true) }}
-                  onSignOut={handleSignOut}
-                />
-              )
+              ? <CollectionPage />
+              : <PokedexUI />
           }
         </main>
         <AuthModal

@@ -12,53 +12,14 @@ export function getJSTDateKey(): string {
   return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
-// Generates a consistent Pokémon index for a given day
-export const getDailyPokemonIndex = (): number => {
-  const today = getJSTDateKey();
-  const seed = today + "pokemonWordle"; // Salt for randomization
-  
-  // Use prime numbers for better hash distribution
-  const PRIME1 = 7919;
-  const PRIME2 = 6733;
-  
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    // XOR and rotation for improved distribution
-    hash = ((hash << 5) ^ (hash >> 7)) + seed.charCodeAt(i) * PRIME1;
-    hash = (hash * PRIME2) & 0x7FFFFFFF; // Keep within 31-bit positive range
-  }
-  
-  return hash % 1025; // Limit to number of Pokémon
-};
-
-// Generates a random Pokémon index (for testing)
-export const getRandomPokemonIndex = (maxIndex: number): number => {
-  return Math.floor(Math.random() * maxIndex);
-};
-
-// Fetches all Pokémon names from the PokéAPI
-export const fetchAllPokemon = async (): Promise<string[]> => {
-  try {
-    const response = await fetch('https://pokeapi.co/api/v2/pokemon?limit=1025');
-    const data = await response.json();
-    
-    // Extract and normalize the names
-    return data.results.map((pokemon: { name: string }) => 
-      normalizePokemonName(pokemon.name)
-    );
-  } catch (error) {
-    console.error('Error fetching Pokémon list:', error);
-    throw error;
-  }
-};
-
 // Fetches detailed information for a specific Pokémon
-export const fetchPokemonDetails = async (name: string): Promise<Pokemon> => {
+export const fetchPokemonDetails = async (idOrName: number | string): Promise<Pokemon> => {
   try {
-    const response = await fetch(`https://pokeapi.co/api/v2/pokemon/${name}`);
+    const response = await fetch(`https://pokeapi.co/api/v2/pokemon/${idOrName}`);
+    if (!response.ok) throw new Error(`PokéAPI ${response.status}`);
     return await response.json();
   } catch (error) {
-    console.error(`Error fetching details for ${name}:`, error);
+    console.error(`Error fetching details for ${idOrName}:`, error);
     throw error;
   }
 };

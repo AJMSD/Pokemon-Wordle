@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { checkRateLimit } from '../_shared/rateLimit.ts';
+import { resolveTarget, revealedHints, targetColumns } from '../_shared/target.ts';
 
 Deno.serve(async (req: Request) => {
   const cors = handleCors(req);
@@ -102,13 +103,16 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // The guesses were made against the guest's target, so it moves with them.
+    const target = await resolveTarget(supabaseAdmin, puzzle_date_key, guest_id, guestSession);
+
     // Insert migrated user session
     const { data: migratedSession } = await supabaseAdmin
       .from('daily_sessions')
       .insert({
         user_id: user.id,
         puzzle_date_key,
-        puzzle_id: guestSession.puzzle_id,
+        ...targetColumns(target),
         guesses: guestSession.guesses,
         hint_flags: guestSession.hint_flags,
         completion_state: guestSession.completion_state,
@@ -123,31 +127,19 @@ Deno.serve(async (req: Request) => {
       .delete()
       .match({ guest_id, puzzle_date_key });
 
-    // Load puzzle for response
-    const { data: puzzle } = await supabaseAdmin
-      .from('daily_puzzles')
-      .select('pokemon_name, pokemon_data')
-      .eq('puzzle_date_key', puzzle_date_key)
-      .single();
-
-    const hints: Record<string, unknown> = {};
-    if (migratedSession!.hint_flags.ability) hints.ability = puzzle!.pokemon_data.ability;
-    if (migratedSession!.hint_flags.generation) hints.generation = puzzle!.pokemon_data.generation;
-    if (migratedSession!.hint_flags.type) hints.types = puzzle!.pokemon_data.types;
-
     const responseBody: Record<string, unknown> = {
       guesses: migratedSession!.guesses,
       hint_flags: migratedSession!.hint_flags,
-      hints,
+      hints: revealedHints(migratedSession!.hint_flags, target.data),
       completion_state: migratedSession!.completion_state,
       version: migratedSession!.version,
       puzzle_metadata: {
-        name_length: (puzzle!.pokemon_name as string).replace(/[^a-z]/gi, '').length,
+        name_length: target.name.replace(/[^a-z]/gi, '').length,
       },
     };
 
     if (migratedSession!.completion_state !== 'playing') {
-      responseBody.pokemon_name = puzzle!.pokemon_name;
+      responseBody.pokemon_name = target.name;
     }
 
     console.log(JSON.stringify({ fn: 'migrate-guest', method: req.method, user_id: user.id, status: 200, duration_ms: Date.now() - start }));

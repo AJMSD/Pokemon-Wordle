@@ -261,53 +261,6 @@
   align-items: center;
 }
 
-.mobile-trainer-menu {
-  position: relative;
-}
-
-.mobile-trainer-trigger {
-  background: #f4f4f4;
-  border: 2px solid #222;
-  color: #222;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 6px 10px;
-  min-height: 36px;
-  min-width: 84px;
-  line-height: 1;
-}
-
-.mobile-trainer-actions {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  width: 150px;
-  border: 2px solid #222;
-  background: #fff;
-  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.35);
-  z-index: 30;
-}
-
-.mobile-trainer-action {
-  width: 100%;
-  text-align: left;
-  padding: 10px 12px;
-  border: none;
-  border-bottom: 1px solid #ddd;
-  background: #fff;
-  color: #222;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.mobile-trainer-action:last-child {
-  border-bottom: none;
-}
-
-.mobile-trainer-action.danger {
-  color: #9f1239;
-}
-
 .small-light,
 .bottom-light {
   position: relative;
@@ -678,7 +631,7 @@
   padding: 20px 0;
 }
 
-/* Submit button: the Master Ball sprite at 2x inside a pixel button */
+/* Submit button: just the Master Ball sprite at 2x, no frame around it */
 .submit-ball-btn {
   flex: 0 0 auto;
   width: 48px;
@@ -688,8 +641,20 @@
   justify-content: center;
   overflow: hidden;
   padding: 0;
-  background-color: #f0f0f0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
   cursor: pointer;
+  transition: none;
+}
+
+.submit-ball-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.submit-ball-btn:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .submit-ball-btn img {
@@ -700,7 +665,8 @@
 }
 
 .submit-ball-btn:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Hint glow effect */
@@ -801,20 +767,34 @@
     padding: 8px;
   }
 
+  /* Slim lights row: the phone header now sits above the Pokédex. */
   .left-panel-top {
-    padding: 2px 4px 6px;
+    padding: 0 4px 4px;
   }
 
   .blue-light {
-    width: 44px;
-    height: 44px;
+    width: 32px;
+    height: 32px;
+  }
+
+  .blue-light::before {
+    inset: 3px;
   }
 
   .blue-light::after {
-    top: 9px;
-    left: 9px;
+    top: 7px;
+    left: 7px;
+    width: 10px;
+    height: 10px;
+  }
+
+  .small-light {
     width: 14px;
     height: 14px;
+  }
+
+  .small-lights-container {
+    gap: 6px;
   }
 
   .main-screen-container {
@@ -895,20 +875,6 @@
     height: 44px;
   }
 
-  .mobile-trainer-trigger {
-    min-height: 44px;
-    min-width: 90px;
-    font-size: 11px;
-    padding: 6px 8px;
-  }
-
-  /* Mobile touch targets */
-  header .text-sm {
-    min-height: 44px;
-    display: inline-flex;
-    align-items: center;
-  }
-
   .suggestion-item {
     padding: 12px 14px;
   }
@@ -970,11 +936,6 @@ header h1 {
   border: 2px solid #4a4a4a;
 }
 
-.letter-block.pending {
-  background-color: #8a8a8a;
-  border: 2px solid #6f6f6f;
-}
-
 /* Mobile responsiveness for letter blocks */
 @media (max-width: 768px) {
   .letter-block {
@@ -1016,12 +977,6 @@ header h1 {
 }
 .guess-shake { animation: guess-shake 0.4s ease-in-out; }
 
-@keyframes shimmer {
-  0%, 100% { opacity: 0.5; }
-  50%       { opacity: 1; }
-}
-.guess-pending { animation: shimmer 1s ease-in-out infinite; }
-
 .game-over-banner {
   background: rgba(255,255,255,0.9);
   border-radius: 0;
@@ -1047,7 +1002,7 @@ header h1 {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .win-animate, .ball-burst-animate, .guess-shake, .guess-pending {
+  .win-animate, .ball-burst-animate, .guess-shake {
     animation: none;
   }
   .blue-light,
@@ -1063,7 +1018,9 @@ header h1 {
   .pixel-btn:active:not(:disabled),
   .equip-btn:active:not(:disabled),
   .header-icon-btn:hover:not([aria-disabled="true"]),
-  .header-icon-btn:active:not([aria-disabled="true"]) { transform: none; }
+  .header-icon-btn:active:not([aria-disabled="true"]),
+  .submit-ball-btn:hover:not(:disabled),
+  .submit-ball-btn:active:not(:disabled) { transform: none; }
   .suggestions-dropdown { animation: none !important; }
 }
 

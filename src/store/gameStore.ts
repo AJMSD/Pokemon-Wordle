@@ -1,20 +1,23 @@
 import { create } from 'zustand';
-import { GameState, GameActions } from '../types';
-import { 
-  fetchAllPokemon, 
-  fetchPokemonDetails, 
+import { GameState, GameActions, Hint, Pokemon } from '../types';
+import {
+  fetchPokemonDetails,
   fetchPokemonSpecies,
-  getDailyPokemonIndex,
   getJSTDateKey,
   isCorrectGuess,
   isValidPokemonName,
   normalizePokemonName
 } from '../utils/pokemonUtils';
+import { generationForId, getDailyPokemonId } from '../logic/dailyTarget';
+import { POKEMON_NAMES } from '../data/pokemonNames';
 
 type GameStorageScope = 'guest' | `user:${string}`;
 
 const LEGACY_GAME_STATE_KEY = 'gameState';
 const LEGACY_LAST_PLAYED_DATE_KEY = 'lastPlayedDate';
+const GUEST_ID_KEY = 'wurmple_guest_id';
+const MAX_GUESSES = 10;
+const POKEMON_LIST = POKEMON_NAMES as string[];
 
 function getStorageKeys(scope: GameStorageScope) {
   return {
@@ -26,7 +29,6 @@ function getStorageKeys(scope: GameStorageScope) {
 function getPersistedStateSnapshot(state: GameState) {
   return {
     dailyPokemon: state.dailyPokemon,
-    pokemonList: state.pokemonList,
     guesses: state.guesses,
     hints: state.hints,
     gameStatus: state.gameStatus,
@@ -37,7 +39,6 @@ function getPersistedStateSnapshot(state: GameState) {
     rateLimitUntil: state.rateLimitUntil,
     newlyUnlockedBalls: state.newlyUnlockedBalls,
     rejectedGuess: state.rejectedGuess,
-    pendingGuess: state.pendingGuess,
   };
 }
 
@@ -60,8 +61,67 @@ function getEmptyHints() {
   ];
 }
 
+// Hints the client can reveal on its own, so an optimistic guess shows them at once.
+function revealLocalHints(hints: Hint[], guessCount: number, pokemon: Pokemon): Hint[] {
+  return hints.map(hint => {
+    if (hint.revealed) return hint;
+    if (hint.type === 'ability' && guessCount >= 3) {
+      const ability = pokemon.abilities?.[0]?.ability.name;
+      return ability ? { ...hint, value: ability, revealed: true } : hint;
+    }
+    if (hint.type === 'generation' && guessCount >= 6 && pokemon.id) {
+      return { ...hint, value: generationForId(pokemon.id), revealed: true };
+    }
+    if (hint.type === 'type' && guessCount >= 9) {
+      const types = pokemon.types?.map(t => t.type.name);
+      return types?.length ? { ...hint, value: types, revealed: true } : hint;
+    }
+    return hint;
+  });
+}
+
+function statusFromServer(state: string): GameState['gameStatus'] {
+  return state === 'won' ? 'won' : state === 'lost' ? 'lost' : 'playing';
+}
+
 let serverSyncEpoch = 0;
 let activeStorageScope: GameStorageScope = 'guest';
+// Bumped by initializeGame so a slow detail fetch can't land in a newer game.
+let initEpoch = 0;
+// In-flight server session load; early guesses wait on it instead of failing.
+let serverInitPromise: Promise<void> | null = null;
+// Optimistic guesses not yet confirmed, in submit order. Requests run one at
+// a time on submitChain so each carries the version the previous one returned.
+let pendingGuesses: string[] = [];
+let submitChain: Promise<unknown> = Promise.resolve();
+// Bumped on rollback so queued guesses built on the rolled-back state are dropped.
+let submitGeneration = 0;
+
+function getGuestSeed(): string {
+  let id = localStorage.getItem(GUEST_ID_KEY);
+  if (!id) {
+    id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    try { localStorage.setItem(GUEST_ID_KEY, id); } catch {}
+  }
+  return id;
+}
+
+// Stable per-identity seed for the daily target: auth user id or local guest id.
+function seedFor(scope: GameStorageScope): string {
+  return scope === 'guest' ? getGuestSeed() : scope.slice('user:'.length);
+}
+
+// Playable stand-in until PokéAPI details arrive: colours only need the name.
+function stubPokemon(id: number): Pokemon {
+  return { id, name: POKEMON_NAMES[id - 1] ?? '' };
+}
+
+// Server guesses plus any optimistic ones it hasn't confirmed yet.
+function withPendingGuesses(serverGuesses: string[]): string[] {
+  return [...serverGuesses, ...pendingGuesses.filter(g => !serverGuesses.includes(g))];
+}
 
 function resolveScope(userId?: string | null): GameStorageScope {
   if (!userId) return 'guest';
@@ -105,7 +165,7 @@ function migrateLegacyGuestStorage(today: string) {
 
 const useGameStore = create<GameState & GameActions>((set, get) => ({
   dailyPokemon: null,
-  pokemonList: [],
+  pokemonList: POKEMON_LIST,
   guesses: [],
   hints: [
     { type: 'ability', value: '', revealed: false },
@@ -123,25 +183,29 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
   rateLimitUntil: null,
   newlyUnlockedBalls: [],
   rejectedGuess: null,
-  pendingGuess: null,
 
   // Loads or initializes the game state using localStorage when possible
   initializeGame: async () => {
+    const epoch = ++initEpoch;
     set({ isLoading: true, error: null });
 
     try {
       const today = getJSTDateKey();
       const keys = getStorageKeys(activeStorageScope);
+      const targetId = getDailyPokemonId(today, seedFor(activeStorageScope));
       const migratedLegacy = migrateLegacyGuestStorage(today);
       const lastPlayed = localStorage.getItem(keys.lastPlayedDate) ?? migratedLegacy?.legacyDate ?? null;
       const savedStateRaw = localStorage.getItem(keys.gameState) ?? (migratedLegacy ? JSON.stringify(migratedLegacy.parsedState) : null);
 
-      // Restore previous game state if it's from the same day
+      // Restore previous game state if it's from the same day and target
       if (lastPlayed === today && savedStateRaw) {
         try {
           const savedState = JSON.parse(savedStateRaw);
-          set({ ...savedState, isLoading: false, lastPlayedDate: today });
-          return;
+          const savedId = savedState.dailyPokemon?.id;
+          if (savedId === undefined || savedId === targetId) {
+            set({ ...savedState, pokemonList: POKEMON_LIST, isLoading: false, lastPlayedDate: today });
+            return;
+          }
         } catch (e) {
           console.error('Failed to parse saved game state', e);
         }
@@ -157,34 +221,15 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       }
       staleKeys.forEach(k => localStorage.removeItem(k));
 
-      // Pokemon list — served from cache when available
-      const listCacheKey = `pokemon_list_cache_${today}`;
-      let pokemonList: string[];
-      const cachedList = localStorage.getItem(listCacheKey);
-      if (cachedList) {
-        pokemonList = JSON.parse(cachedList);
-      } else {
-        pokemonList = await fetchAllPokemon();
-        try { localStorage.setItem(listCacheKey, JSON.stringify(pokemonList)); } catch {}
-      }
-
-      const dailyIndex = getDailyPokemonIndex();
-      const dailyPokemonName = pokemonList[dailyIndex % pokemonList.length];
-
-      // Daily pokemon details — served from cache when available
-      const detailCacheKey = `pokemon_detail_cache_${dailyPokemonName}_${today}`;
-      let dailyPokemon;
+      // Playable at once from the bundled name; sprite and hint data fill in
+      // when the details load.
+      const detailCacheKey = `pokemon_detail_cache_${targetId}_${today}`;
       const cachedDetail = localStorage.getItem(detailCacheKey);
-      if (cachedDetail) {
-        dailyPokemon = JSON.parse(cachedDetail);
-      } else {
-        dailyPokemon = await fetchPokemonDetails(dailyPokemonName);
-        try { localStorage.setItem(detailCacheKey, JSON.stringify(dailyPokemon)); } catch {}
-      }
+      const dailyPokemon: Pokemon = cachedDetail ? JSON.parse(cachedDetail) : stubPokemon(targetId);
 
-      const newState: Partial<GameState> = {
+      set({
         dailyPokemon,
-        pokemonList,
+        pokemonList: POKEMON_LIST,
         guesses: [],
         hints: getEmptyHints(),
         gameStatus: 'playing',
@@ -196,26 +241,27 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
         rateLimitUntil: null,
         newlyUnlockedBalls: [],
         rejectedGuess: null,
-        pendingGuess: null,
-      };
-
-      set(newState);
-
-      // Save state to localStorage
-      localStorage.setItem(keys.lastPlayedDate, today);
-      localStorage.setItem(keys.gameState, JSON.stringify({
-        dailyPokemon,
-        pokemonList,
-        guesses: [],
-        hints: newState.hints,
-        gameStatus: 'playing',
-        lastPlayedDate: today
-      }));
-    } catch (error) {
-      set({
-        error: 'Failed to sync your Pokédex. Please try again.',
-        isLoading: false
       });
+
+      localStorage.setItem(keys.lastPlayedDate, today);
+      persistGameStateSnapshot(get());
+
+      if (!cachedDetail) {
+        const details = await fetchPokemonDetails(targetId);
+        try { localStorage.setItem(detailCacheKey, JSON.stringify(details)); } catch {}
+        if (epoch !== initEpoch || get().dailyPokemon?.id !== targetId) return;
+        set({ dailyPokemon: details });
+        persistGameStateSnapshot(get());
+      }
+    } catch (error) {
+      if (epoch !== initEpoch) return;
+      // The bundled-name stub keeps the game playable without details.
+      if (!get().dailyPokemon) {
+        set({
+          error: 'Failed to sync your Pokédex. Please try again.',
+          isLoading: false
+        });
+      }
     }
   },
 
@@ -371,51 +417,49 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
   initializeServerSession: async (accessToken) => {
     const requestEpoch = serverSyncEpoch;
     const base = import.meta.env.VITE_API_URL as string;
-    try {
-      const puzzleRes = await fetch(`${base}/functions/v1/get-daily-puzzle`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (requestEpoch !== serverSyncEpoch) return;
-      if (!puzzleRes.ok) return;
-      const { puzzle_date_key } = await puzzleRes.json();
+    const puzzleDateKey = getJSTDateKey();
 
-      const sessRes = await fetch(
-        `${base}/functions/v1/get-session?puzzle_date_key=${puzzle_date_key}`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
-      if (requestEpoch !== serverSyncEpoch) return;
-      if (!sessRes.ok) return;
-      const s = await sessRes.json();
-      if (requestEpoch !== serverSyncEpoch) return;
+    const load = (async () => {
+      try {
+        // get-session creates today's session (and pins its target) on first read.
+        const sessRes = await fetch(
+          `${base}/functions/v1/get-session?puzzle_date_key=${puzzleDateKey}`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+        if (requestEpoch !== serverSyncEpoch) return;
+        if (!sessRes.ok) return;
+        const s = await sessRes.json();
+        if (requestEpoch !== serverSyncEpoch) return;
 
-      const newStatus: GameState['gameStatus'] =
-        s.completion_state === 'won' ? 'won' :
-        s.completion_state === 'lost' ? 'lost' : 'playing';
+        set(state => ({
+          guesses: withPendingGuesses(s.guesses ?? []),
+          hints: s.hint_flags ? mapServerHints(s.hint_flags, s.hints ?? {}) : state.hints,
+          gameStatus: state.gameStatus === 'playing' ? statusFromServer(s.completion_state) : state.gameStatus,
+          sessionVersion: s.version,
+          puzzleDateKey,
+          dailyPokemon: state.dailyPokemon && s.pokemon_name
+            ? { ...state.dailyPokemon, name: s.pokemon_name }
+            : state.dailyPokemon,
+        }));
 
-      set(state => ({
-        guesses: s.guesses ?? [],
-        hints: s.hint_flags ? mapServerHints(s.hint_flags, s.hints ?? {}) : state.hints,
-        gameStatus: state.gameStatus === 'playing' ? newStatus : state.gameStatus,
-        sessionVersion: s.version,
-        puzzleDateKey: puzzle_date_key,
-        dailyPokemon: state.dailyPokemon && s.pokemon_name
-          ? { ...state.dailyPokemon, name: s.pokemon_name }
-          : state.dailyPokemon,
-      }));
+        persistGameStateSnapshot(get());
+      } catch (err) {
+        console.error('Server session sync failed:', err);
+      }
+    })();
 
-      if (requestEpoch !== serverSyncEpoch) return;
-      persistGameStateSnapshot(get());
-    } catch (err) {
-      console.error('Server session sync failed:', err);
-    }
+    serverInitPromise = load;
+    await load;
+    if (serverInitPromise === load) serverInitPromise = null;
   },
 
   submitGuessToServer: async (guess, accessToken) => {
     const requestEpoch = serverSyncEpoch;
-    const { dailyPokemon, guesses, pokemonList, gameStatus, sessionVersion, puzzleDateKey, isSubmitting } = get();
+    const generation = submitGeneration;
+    const { dailyPokemon, guesses, pokemonList, gameStatus, hints } = get();
     const base = import.meta.env.VITE_API_URL as string;
 
-    if (isSubmitting || !dailyPokemon || gameStatus !== 'playing' || !puzzleDateKey) return false;
+    if (!dailyPokemon || gameStatus !== 'playing') return false;
 
     const normalized = normalizePokemonName(guess);
 
@@ -428,72 +472,102 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       return false;
     }
 
-    set({ isSubmitting: true, pendingGuess: normalized, error: null });
+    // Optimistic: the client knows the target, so show the coloured row,
+    // hints and result now and reconcile when the server answers.
+    const snapshot = { guesses, hints, gameStatus };
+    const newGuesses = [...guesses, normalized];
+    const optimisticStatus: GameState['gameStatus'] =
+      isCorrectGuess(normalized, dailyPokemon) ? 'won' :
+      newGuesses.length >= MAX_GUESSES ? 'lost' : 'playing';
+    pendingGuesses.push(normalized);
+    set({
+      guesses: newGuesses,
+      hints: revealLocalHints(hints, newGuesses.length, dailyPokemon),
+      gameStatus: optimisticStatus,
+      isSubmitting: true,
+      error: null,
+    });
 
-    try {
-      const resp = await fetch(`${base}/functions/v1/submit-guess`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({
-          guess: normalized,
-          session_version: sessionVersion ?? 1,
-          puzzle_date_key: puzzleDateKey,
-        }),
-      });
+    // Undo this guess and everything queued after it.
+    const rollback = (patch: Partial<GameState>) => {
+      submitGeneration += 1;
+      pendingGuesses = [];
+      set({ ...snapshot, isSubmitting: false, rejectedGuess: normalized, ...patch });
+      persistGameStateSnapshot(get());
+      return false;
+    };
 
-      if (requestEpoch !== serverSyncEpoch) return false;
-      if (resp.ok) {
-        const d = await resp.json();
-        if (requestEpoch !== serverSyncEpoch) return false;
-        const newStatus: GameState['gameStatus'] =
-          d.completion_state === 'won' ? 'won' :
-          d.completion_state === 'lost' ? 'lost' : 'playing';
+    const send = async (): Promise<boolean> => {
+      // A sign-out or an earlier rollback already discarded this guess.
+      const discarded = () => requestEpoch !== serverSyncEpoch || generation !== submitGeneration;
+      if (discarded()) return false;
 
-        set({
-          guesses: d.guesses,
-          hints: d.hint_flags ? mapServerHints(d.hint_flags, d.hints ?? {}) : get().hints,
-          gameStatus: newStatus,
-          sessionVersion: d.version,
-          isSubmitting: false,
-          pendingGuess: null,
-          newlyUnlockedBalls: d.newly_unlocked_balls ?? [],
-          dailyPokemon: get().dailyPokemon && d.pokemon_name
-            ? { ...get().dailyPokemon!, name: d.pokemon_name }
-            : get().dailyPokemon,
-        });
-
-        const keys = getStorageKeys(activeStorageScope);
-        localStorage.setItem(keys.lastPlayedDate, getJSTDateKey());
-        if (requestEpoch !== serverSyncEpoch) return false;
-        persistGameStateSnapshot(get());
-        return newStatus === 'won';
+      if (!get().puzzleDateKey && serverInitPromise) await serverInitPromise;
+      if (discarded()) return false;
+      const { sessionVersion, puzzleDateKey } = get();
+      if (!puzzleDateKey) {
+        return rollback({ error: "Couldn't reach the Pokédex server. Try again." });
       }
 
-      if (requestEpoch !== serverSyncEpoch) return false;
-      const errData = await resp.json().catch(() => ({}));
-      if (resp.status === 409) {
-        set({ isSubmitting: false, pendingGuess: null, staleLock: true, rejectedGuess: normalized });
-      } else if (resp.status === 429) {
-        set({
-          isSubmitting: false,
-          pendingGuess: null,
-          rateLimitUntil: Date.now() + (errData.retry_after ?? 60) * 1000,
-          rejectedGuess: normalized,
+      try {
+        const resp = await fetch(`${base}/functions/v1/submit-guess`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({
+            guess: normalized,
+            session_version: sessionVersion ?? 1,
+            puzzle_date_key: puzzleDateKey,
+          }),
         });
-      } else {
-        set({
-          isSubmitting: false,
-          pendingGuess: null,
-          error: errData.error ?? "Couldn't register that guess. Try again.",
-          rejectedGuess: normalized,
-        });
+
+        if (discarded()) return false;
+        if (resp.ok) {
+          const d = await resp.json();
+          if (discarded()) return false;
+          pendingGuesses = pendingGuesses.filter(g => g !== normalized);
+          const morePending = pendingGuesses.length > 0;
+          const serverStatus = statusFromServer(d.completion_state);
+
+          set(state => {
+            const serverHints = d.hint_flags ? mapServerHints(d.hint_flags, d.hints ?? {}) : state.hints;
+            return {
+              // Later optimistic guesses stay on screen until their own reply.
+              guesses: withPendingGuesses(d.guesses),
+              hints: morePending
+                ? state.hints.map((h, i) => (h.revealed ? h : serverHints[i]))
+                : serverHints,
+              gameStatus: morePending ? state.gameStatus : serverStatus,
+              sessionVersion: d.version,
+              isSubmitting: morePending,
+              newlyUnlockedBalls: [...state.newlyUnlockedBalls, ...(d.newly_unlocked_balls ?? [])],
+              dailyPokemon: state.dailyPokemon && d.pokemon_name
+                ? { ...state.dailyPokemon, name: d.pokemon_name }
+                : state.dailyPokemon,
+            };
+          });
+
+          const keys = getStorageKeys(activeStorageScope);
+          localStorage.setItem(keys.lastPlayedDate, getJSTDateKey());
+          persistGameStateSnapshot(get());
+          return serverStatus === 'won';
+        }
+
+        const errData = await resp.json().catch(() => ({}));
+        if (discarded()) return false;
+        if (resp.status === 409) return rollback({ staleLock: true });
+        if (resp.status === 429) {
+          return rollback({ rateLimitUntil: Date.now() + (errData.retry_after ?? 60) * 1000 });
+        }
+        return rollback({ error: errData.error ?? "Couldn't register that guess. Try again." });
+      } catch {
+        if (discarded()) return false;
+        return rollback({ error: 'Connection lost. Check your signal, Trainer!' });
       }
-      return false;
-    } catch {
-      if (requestEpoch !== serverSyncEpoch) return false;
-      set({ isSubmitting: false, pendingGuess: null, error: 'Connection lost. Check your signal, Trainer!', rejectedGuess: normalized });
-      return false;
-    }
+    };
+
+    const result = submitChain.then(send, send);
+    submitChain = result.catch(() => undefined);
+    return result;
   },
 
   invalidateServerSessionSync: () => {
@@ -510,8 +584,10 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       rateLimitUntil: null,
       newlyUnlockedBalls: [],
       rejectedGuess: null,
-      pendingGuess: null,
     });
+    pendingGuesses = [];
+    submitGeneration += 1;
+    serverInitPromise = null;
     clearScopeStorage(activeStorageScope);
   },
 

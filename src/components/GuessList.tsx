@@ -3,7 +3,7 @@ import { useGameStore } from '../store/gameStore'
 import { getLetterMatchResult, normalizePokemonName } from '../utils/pokemonUtils'
 
 const GuessList: React.FC = () => {
-  const { guesses, dailyPokemon, isSubmitting, pendingGuess } = useGameStore()
+  const { guesses, dailyPokemon } = useGameStore()
   const guessesEndRef = useRef<HTMLDivElement>(null)
   
   // Auto-scroll to the latest guess
@@ -65,21 +65,6 @@ const GuessList: React.FC = () => {
             </li>
           );
         })}
-        {isSubmitting && pendingGuess && (
-          <li className="guess-item guess-pending">
-            <div className="guess-info">
-              <span className="guess-name">{pendingGuess}</span>
-              <span className="guess-number">#{guesses.length + 1}</span>
-            </div>
-            <div className="letter-blocks">
-              {normalizePokemonName(pendingGuess).split('').map((letter, letterIndex) => (
-                <div key={letterIndex} className="letter-block pending">
-                  {letter}
-                </div>
-              ))}
-            </div>
-          </li>
-        )}
         {/* Invisible element for scrolling to bottom */}
         <div ref={guessesEndRef} />
       </ul>

@@ -1,6 +1,8 @@
 // Small load generator for capacity checks against the local gateway.
 // Usage: node loadtest.mjs <endpoint> <concurrency> <seconds>
-//   endpoint: puzzle | guess | health
+//   endpoint: puzzle | session | guess | health
+// PACE_MS=<ms> sleeps between requests per worker (stay under per-IP limits
+// when measuring latency through the public gateway).
 // Guest sessions it creates use guest_id 'loadtest-*'; clean them up with
 //   delete from daily_sessions where guest_id like 'loadtest-%';
 //   delete from rate_limits where key like '%:ip:%';
@@ -12,20 +14,26 @@ const anon = process.env.ANON_KEY;
 const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
 const headers = { Authorization: `Bearer ${anon}`, 'Content-Type': 'application/json' };
 // Spread requests over fake client IPs so per-IP limits don't mask backend capacity.
+// Cloudflare rejects a client-set CF-Connecting-IP, so only spoof against the local gateway.
+const spoofIp = /\/\/(127\.0\.0\.1|localhost)[:/]/.test(base);
 const randomIp = () => Array.from({ length: 4 }, () => Math.floor(Math.random() * 254) + 1).join('.');
 
 const requests = {
   health: () => fetch(`${base}/health`),
   puzzle: () => fetch(`${base}/get-daily-puzzle`, { headers }),
+  // One fixed guest so repeated reads hit the same session row.
+  session: () =>
+    fetch(`${base}/get-session?puzzle_date_key=${today}&guest_id=loadtest-session`, { headers }),
   guess: () =>
     fetch(`${base}/submit-guess`, {
       method: 'POST',
-      headers: { ...headers, 'CF-Connecting-IP': randomIp() },
+      headers: spoofIp ? { ...headers, 'CF-Connecting-IP': randomIp() } : headers,
       body: JSON.stringify({ guess: 'pikachu', puzzle_date_key: today, guest_id: `loadtest-${randomUUID()}` }),
     }),
 };
 
 const send = requests[endpoint];
+const paceMs = Number(process.env.PACE_MS ?? 0);
 const deadline = Date.now() + Number(seconds) * 1000;
 const latencies = [];
 const statuses = {};
@@ -41,6 +49,7 @@ async function worker() {
       statuses.error = (statuses.error ?? 0) + 1;
     }
     latencies.push(performance.now() - t0);
+    if (paceMs) await new Promise((r) => setTimeout(r, paceMs));
   }
 }
 

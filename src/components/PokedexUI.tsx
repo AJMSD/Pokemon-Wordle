@@ -7,24 +7,12 @@ import useToast from '../hooks/useToast'
 import useGame from '../hooks/useGame'
 import { ballSpriteUrl } from '../lib/sprites'
 
-interface PokedexUIProps {
-  onShowCollection?: () => void
-  onShowProfile?: () => void
-  onShowAuth: () => void
-  onSignOut: () => void | Promise<void>
-}
-
-const PokedexUI: React.FC<PokedexUIProps> = ({
-  onShowCollection,
-  onShowProfile,
-  onShowAuth,
-  onSignOut,
-}) => {
+const PokedexUI: React.FC = () => {
   const [currentGuess, setCurrentGuess] = useState('')
   const {
     makeGuess, submitGuessToServer, error, resetError,
     dailyPokemon, gameStatus, checkForNewDay,
-    isSubmitting, staleLock, rateLimitUntil, rejectedGuess,
+    staleLock, rateLimitUntil, rejectedGuess,
     clearStaleLock, clearRejectedGuess, clearRateLimitLock,
   } = useGameStore()
   const session = useAuthStore(state => state.session)
@@ -36,7 +24,6 @@ const PokedexUI: React.FC<PokedexUIProps> = ({
   const [selectedIndex, setSelectedIndex] = useState(-1)
   const [justSelected, setJustSelected] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
-  const [showMobileTrainerMenu, setShowMobileTrainerMenu] = useState(false)
   const [rateLimitSeconds, setRateLimitSeconds] = useState<number | null>(null)
   const [inputShaking, setInputShaking] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -57,12 +44,6 @@ const PokedexUI: React.FC<PokedexUIProps> = ({
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
-
-  useEffect(() => {
-    if (!isMobile) {
-      setShowMobileTrainerMenu(false)
-    }
-  }, [isMobile])
 
   // Check for a new day when component mounts
   useEffect(() => {
@@ -95,9 +76,10 @@ const PokedexUI: React.FC<PokedexUIProps> = ({
     return () => clearInterval(id);
   }, [rateLimitUntil]);
 
-  // Shake on rejection
+  // Shake on rejection and hand the rolled-back guess back to the input
   useEffect(() => {
     if (!rejectedGuess) return;
+    setCurrentGuess(prev => prev || rejectedGuess);
     setInputShaking(true);
     const t = setTimeout(() => { setInputShaking(false); clearRejectedGuess(); }, 500);
     return () => clearTimeout(t);
@@ -156,8 +138,8 @@ const PokedexUI: React.FC<PokedexUIProps> = ({
     if (currentGuess.trim() === '') return
 
     if (!isGuest && session?.access_token) {
-      const won = await submitGuessToServer(currentGuess, session.access_token)
-      if (won) fetchMe()
+      // Optimistic: the guess shows at once, so free the input without waiting.
+      void submitGuessToServer(currentGuess, session.access_token).then(won => { if (won) fetchMe() })
     } else {
       await makeGuess(currentGuess)
     }
@@ -274,72 +256,6 @@ const PokedexUI: React.FC<PokedexUIProps> = ({
               <div className="small-light yellow"></div>
               <div className="small-light green"></div>
             </div>
-            {isMobile && (
-              <div className="mobile-trainer-menu">
-                <button
-                  type="button"
-                  className="mobile-trainer-trigger"
-                  onClick={() => setShowMobileTrainerMenu(prev => !prev)}
-                  aria-expanded={showMobileTrainerMenu}
-                  aria-controls="mobile-trainer-actions"
-                >
-                  Trainer
-                </button>
-                {showMobileTrainerMenu && (
-                  <div id="mobile-trainer-actions" className="mobile-trainer-actions">
-                    {isGuest ? (
-                      <button
-                        type="button"
-                        className="mobile-trainer-action"
-                        onClick={() => {
-                          setShowMobileTrainerMenu(false)
-                          onShowAuth()
-                        }}
-                      >
-                        Sign In
-                      </button>
-                    ) : (
-                      <>
-                        {onShowCollection && (
-                          <button
-                            type="button"
-                            className="mobile-trainer-action"
-                            onClick={() => {
-                              setShowMobileTrainerMenu(false)
-                              onShowCollection()
-                            }}
-                          >
-                            Collection
-                          </button>
-                        )}
-                        {onShowProfile && (
-                          <button
-                            type="button"
-                            className="mobile-trainer-action"
-                            onClick={() => {
-                              setShowMobileTrainerMenu(false)
-                              onShowProfile()
-                            }}
-                          >
-                            Profile
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className="mobile-trainer-action danger"
-                          onClick={async () => {
-                            setShowMobileTrainerMenu(false)
-                            await onSignOut()
-                          }}
-                        >
-                          Sign Out
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>
         <div className="main-screen-container">
@@ -388,14 +304,14 @@ const PokedexUI: React.FC<PokedexUIProps> = ({
               placeholder="Enter Pokémon name..."
               autoComplete="off"
               autoFocus
-              disabled={gameStatus !== 'playing' || isSubmitting || staleLock || !!rateLimitSeconds}
+              disabled={gameStatus !== 'playing' || staleLock || !!rateLimitSeconds}
             />
 
             {/* Master Ball submit button */}
             <button
               type="submit"
-              className="submit-ball-btn pixel-btn"
-              disabled={currentGuess.trim() === '' || gameStatus !== 'playing' || isSubmitting || staleLock || !!rateLimitSeconds}
+              className="submit-ball-btn pixel-focus"
+              disabled={currentGuess.trim() === '' || gameStatus !== 'playing' || staleLock || !!rateLimitSeconds}
               aria-label="Submit guess"
             >
               <img src={ballSpriteUrl('master-ball')} alt="" className="sprite" width={60} height={60} />
@@ -425,11 +341,6 @@ const PokedexUI: React.FC<PokedexUIProps> = ({
           {rateLimitSeconds && (
             <p className="text-center text-sm text-yellow-700 mt-2">
               ⏳ Slow down, Trainer! Try again in {rateLimitSeconds}s
-            </p>
-          )}
-          {isSubmitting && (
-            <p className="text-center text-sm text-blue-600 mt-2 animate-pulse">
-              Scanning Pokédex...
             </p>
           )}
           {gameStatus !== 'playing' && (

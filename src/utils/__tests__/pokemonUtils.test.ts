@@ -1,7 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import {
   normalizePokemonName,
-  getDailyPokemonIndex,
   isCorrectGuess,
   isValidPokemonName,
   getLetterMatchResult,
@@ -43,39 +42,6 @@ describe('normalizePokemonName', () => {
 
   it('preserves porygon-z', () => {
     expect(normalizePokemonName('porygon-z')).toBe('porygon-z')
-  })
-})
-
-describe('getDailyPokemonIndex', () => {
-  beforeEach(() => {
-    vi.useFakeTimers()
-  })
-
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
-  it('returns the same index for the same date', () => {
-    vi.setSystemTime(new Date('2026-04-25T10:00:00Z'))
-    const first = getDailyPokemonIndex()
-    vi.setSystemTime(new Date('2026-04-25T14:00:00Z'))
-    const second = getDailyPokemonIndex()
-    expect(first).toBe(second)
-  })
-
-  it('returns a different index for a different date', () => {
-    vi.setSystemTime(new Date('2026-04-25T10:00:00Z'))
-    const day1 = getDailyPokemonIndex()
-    vi.setSystemTime(new Date('2026-04-26T10:00:00Z'))
-    const day2 = getDailyPokemonIndex()
-    expect(day1).not.toBe(day2)
-  })
-
-  it('returns a value in [0, 1024]', () => {
-    vi.setSystemTime(new Date('2026-04-25T12:00:00Z'))
-    const index = getDailyPokemonIndex()
-    expect(index).toBeGreaterThanOrEqual(0)
-    expect(index).toBeLessThan(1025)
   })
 })
 

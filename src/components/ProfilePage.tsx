@@ -4,15 +4,13 @@ import { getAvatarUrl } from '../utils/avatarUtils'
 import DefaultAvatar from './DefaultAvatar'
 import AvatarPicker from './AvatarPicker'
 import useAvatarSrc from '../hooks/useAvatarSrc'
-import { ArrowLeft } from 'pixelarticons/react/ArrowLeft'
 import { ballSpriteUrl } from '../lib/sprites'
 
 interface ProfilePageProps {
-  onBack: () => void
   onTierUpgradeAvailable?: (tierId: string, tierName: string) => void
 }
 
-const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
+const ProfilePage: React.FC<ProfilePageProps> = () => {
   const profile = useAuthStore(state => state.profile)
   const stats = useAuthStore(state => state.stats)
   const isGuest = useAuthStore(state => state.isGuest)
@@ -52,14 +50,6 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
 
   return (
     <div className="max-w-sm sm:max-w-md mx-auto px-1 py-2 sm:py-4">
-      <button
-        onClick={onBack}
-        className="flex items-center gap-1 min-h-[44px] text-sm text-gray-500 hover:text-gray-700 mb-2 pixel-focus"
-      >
-        <ArrowLeft width={24} height={24} aria-hidden="true" />
-        Back to Game
-      </button>
-
       <div className="bg-white pixel-frame p-4 sm:p-6">
         {/* Avatar + username */}
         <div className="flex flex-col items-center gap-2 sm:gap-3 mb-4 sm:mb-6">
@@ -125,22 +115,22 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
 
             {stats ? (
               <>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-3">
-                  <div className="bg-gray-50 border-2 border-gray-200 p-2 sm:p-3 text-center">
-                    <p className="text-2xl font-bold text-gray-900">{stats.current_streak}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">Current Streak</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                  <div className="min-w-0 bg-gray-50 border-2 border-gray-200 px-1 py-2 sm:px-1.5 sm:py-2.5 text-center">
+                    <p className="font-num text-2xl sm:text-xl font-bold leading-none whitespace-nowrap text-gray-900">{stats.current_streak}</p>
+                    <p className="text-xs leading-tight text-gray-500 mt-1">Current Streak</p>
                   </div>
-                  <div className="bg-gray-50 border-2 border-gray-200 p-2 sm:p-3 text-center">
-                    <p className="text-2xl font-bold text-gray-900">{stats.max_streak}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">Best Streak</p>
+                  <div className="min-w-0 bg-gray-50 border-2 border-gray-200 px-1 py-2 sm:px-1.5 sm:py-2.5 text-center">
+                    <p className="font-num text-2xl sm:text-xl font-bold leading-none whitespace-nowrap text-gray-900">{stats.max_streak}</p>
+                    <p className="text-xs leading-tight text-gray-500 mt-1">Best Streak</p>
                   </div>
-                  <div className="bg-gray-50 border-2 border-gray-200 p-2 sm:p-3 text-center">
-                    <p className="text-2xl font-bold text-gray-900">{winPct}%</p>
-                    <p className="text-xs text-gray-500 mt-0.5">Win Rate</p>
+                  <div className="min-w-0 bg-gray-50 border-2 border-gray-200 px-1 py-2 sm:px-1.5 sm:py-2.5 text-center">
+                    <p className="font-num text-2xl sm:text-xl font-bold leading-none whitespace-nowrap text-gray-900">{winPct}%</p>
+                    <p className="text-xs leading-tight text-gray-500 mt-1">Win Rate</p>
                   </div>
-                  <div className="bg-gray-50 border-2 border-gray-200 p-2 sm:p-3 text-center">
-                    <p className="text-2xl font-bold text-gray-900">{stats.avg_guesses > 0 ? stats.avg_guesses.toFixed(1) : '—'}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">Avg Guesses</p>
+                  <div className="min-w-0 bg-gray-50 border-2 border-gray-200 px-1 py-2 sm:px-1.5 sm:py-2.5 text-center">
+                    <p className="font-num text-2xl sm:text-xl font-bold leading-none whitespace-nowrap text-gray-900">{stats.avg_guesses > 0 ? stats.avg_guesses.toFixed(1) : '—'}</p>
+                    <p className="text-xs leading-tight text-gray-500 mt-1">Avg Guesses</p>
                   </div>
                 </div>
                 <div className="bg-gray-50 border-2 border-gray-200 px-3 py-2.5 text-xs text-gray-500 text-center">

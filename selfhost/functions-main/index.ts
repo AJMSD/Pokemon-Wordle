@@ -346,7 +346,8 @@ Deno.serve(async (req: Request) => {
   const memoryLimitMb = 128
   // Keep the wall clock above the 150s request idle timeout configured in Compose.
   const workerTimeoutMs = 400_000
-  const requestAbsentTimeoutMs = 60_000
+  // Keep idle workers warm for 10 min so players between guesses skip cold starts.
+  const requestAbsentTimeoutMs = 600_000
   const noModuleCache = false
   // Using a common Import Map for all functions 
   // to use a scope 'deno.json' it must be dinamically resolved base on the 'service_name'

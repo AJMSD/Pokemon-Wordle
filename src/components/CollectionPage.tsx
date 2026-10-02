@@ -4,11 +4,6 @@ import { isJsonEqual, readJsonCache, writeJsonCache } from '../lib/cache'
 import { ballSpriteUrl } from '../lib/sprites'
 import { BALLS_CACHE_PREFIX } from '../lib/profileCache'
 import { TIER_THRESHOLDS, getStreakTier, nextTier } from '../logic/tierLogic'
-import { ArrowLeft } from 'pixelarticons/react/ArrowLeft'
-
-interface CollectionPageProps {
-  onBack: () => void
-}
 
 interface BallEntry {
   id: string
@@ -99,7 +94,7 @@ function writeCachedBalls(userId: string, data: BallsResponse) {
   writeJsonCache(ballsCacheKey(userId), data)
 }
 
-const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
+const CollectionPage: React.FC = () => {
   const session = useAuthStore(state => state.session)
   const profile = useAuthStore(state => state.profile)
   const stats = useAuthStore(state => state.stats)
@@ -197,17 +192,7 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
 
   return (
     <div className="max-w-3xl mx-auto px-2 sm:px-4 py-2 sm:py-4">
-      <div className="flex items-center gap-2 sm:gap-4 mb-1">
-        <button
-          onClick={onBack}
-          aria-label="Back to Game"
-          className="flex items-center gap-2 min-h-[44px] min-w-[44px] text-sm text-gray-600 hover:text-pokemon-red pixel-focus flex-shrink-0"
-        >
-          <ArrowLeft width={24} height={24} aria-hidden="true" />
-          <span className="hidden sm:inline">Back to Game</span>
-        </button>
-        <h2 className="text-xl sm:text-2xl font-bold text-gray-800 leading-tight">Ball Collection</h2>
-      </div>
+      <h2 className="text-xl sm:text-2xl font-bold text-gray-800 leading-tight mb-1">Ball Collection</h2>
       <p className="hidden sm:block text-sm text-gray-500 mb-3">Earn balls by playing and achieving milestones.</p>
       {setBallError && (
         <div className="mb-3 border-2 border-red-400 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
