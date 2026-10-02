@@ -168,7 +168,8 @@ services:
       - "127.0.0.1:54321:8000" # API  -> wurmple-api.ajmsd.space
       - "127.0.0.1:54380:8080" # site -> wurmple.ajmsd.space
     volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # Directory mount: single-file binds keep the old inode when git replaces the file.
+      - ./nginx:/etc/nginx/conf.d:ro
       - ./site:/usr/share/nginx/html:ro
 
 volumes:

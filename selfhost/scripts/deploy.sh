@@ -37,13 +37,14 @@ fi
 cd "$selfhost"
 docker compose up -d --remove-orphans
 
+# Reload nginx before anything depends on new routes/listeners.
+if changed "${1:-}" selfhost/nginx; then
+  docker compose exec -T gateway nginx -s reload
+fi
+
 if changed "${1:-}" supabase/migrations; then
   (cd "$repo" && npx supabase migration up \
     --db-url "postgresql://postgres:${POSTGRES_PASSWORD}@127.0.0.1:54322/postgres")
-fi
-
-if changed "${1:-}" selfhost/nginx.conf; then
-  docker compose exec -T gateway nginx -s reload
 fi
 
 if changed "${1:-}" supabase/functions src/logic selfhost/functions-main; then
