@@ -223,7 +223,7 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
                             <img
                               src={`${SPRITE_BASE}/${ball.id}.png`}
                               alt={ball.display_name}
-                              className="w-8 h-8 object-contain"
+                              className={`w-8 h-8 object-contain ${isDisplay ? 'ball-active-glow' : ''}`}
                               loading="lazy"
                               decoding="async"
                               width={32}
@@ -284,7 +284,7 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
                       <img
                         src={`${SPRITE_BASE}/${ball.id}.png`}
                         alt={ball.display_name}
-                        className="w-12 h-12 object-contain"
+                        className={`w-12 h-12 object-contain ${isDisplay ? 'ball-active-glow' : ''}`}
                         loading="lazy"
                         decoding="async"
                         width={48}
@@ -311,8 +311,10 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
                         {settingBall ? '…' : 'Set as display badge'}
                       </button>
                     )}
-                    {!isUnlocked && ball.hint && (
-                      <p className="text-xs text-gray-400 text-center leading-snug">{ball.hint}</p>
+                    {ball.hint && (
+                      <p className={`text-xs text-center leading-snug ${isUnlocked ? 'text-gray-500' : 'text-gray-400'}`}>
+                        {ball.hint}
+                      </p>
                     )}
                   </button>
                 )

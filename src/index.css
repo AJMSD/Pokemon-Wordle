@@ -993,3 +993,30 @@ header h1 {
   .unlock-ring-animate { animation: none !important; transition: none !important; }
   .suggestions-dropdown { animation: none !important; }
 }
+
+/* Active display ball: a glow that hugs the sprite's outline */
+.ball-active-glow {
+  filter:
+    drop-shadow(0 0 4px rgba(255, 196, 0, 0.95))
+    drop-shadow(0 0 10px rgba(255, 140, 0, 0.6));
+  animation: ballActiveGlow 1.8s ease-in-out infinite alternate;
+}
+
+@keyframes ballActiveGlow {
+  0% {
+    filter:
+      drop-shadow(0 0 3px rgba(255, 196, 0, 0.8))
+      drop-shadow(0 0 6px rgba(255, 140, 0, 0.4));
+  }
+  100% {
+    filter:
+      drop-shadow(0 0 6px rgba(255, 210, 0, 1))
+      drop-shadow(0 0 14px rgba(255, 140, 0, 0.75));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ball-active-glow {
+    animation: none;
+  }
+}
