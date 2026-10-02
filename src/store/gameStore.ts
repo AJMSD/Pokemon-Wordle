@@ -370,7 +370,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
 
   initializeServerSession: async (accessToken) => {
     const requestEpoch = serverSyncEpoch;
-    const base = import.meta.env.VITE_SUPABASE_URL as string;
+    const base = import.meta.env.VITE_API_URL as string;
     try {
       const puzzleRes = await fetch(`${base}/functions/v1/get-daily-puzzle`, {
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -413,7 +413,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
   submitGuessToServer: async (guess, accessToken) => {
     const requestEpoch = serverSyncEpoch;
     const { dailyPokemon, guesses, pokemonList, gameStatus, sessionVersion, puzzleDateKey, isSubmitting } = get();
-    const base = import.meta.env.VITE_SUPABASE_URL as string;
+    const base = import.meta.env.VITE_API_URL as string;
 
     if (isSubmitting || !dailyPokemon || gameStatus !== 'playing' || !puzzleDateKey) return false;
 

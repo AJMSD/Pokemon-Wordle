@@ -53,7 +53,7 @@ fi
 
 if changed "${1:-}" src public index.html package-lock.json vite.config.ts tailwind.config.js postcss.config.js; then
   cd "$repo"
-  VITE_SUPABASE_URL="$API_EXTERNAL_URL" VITE_SUPABASE_ANON_KEY="$ANON_KEY" \
+  VITE_API_URL="$API_EXTERNAL_URL" VITE_API_ANON_KEY="$ANON_KEY" \
     npm run build -- --outDir "$selfhost/.build" --emptyOutDir
   mkdir -p "$selfhost/site"
   rsync -a --delete "$selfhost/.build/" "$selfhost/site/"

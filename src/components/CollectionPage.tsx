@@ -88,7 +88,7 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
 
     const fetchId = latestFetchIdRef.current + 1
     latestFetchIdRef.current = fetchId
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
+    const supabaseUrl = import.meta.env.VITE_API_URL as string
     fetch(`${supabaseUrl}/functions/v1/get-balls`, {
       headers: { 'Authorization': `Bearer ${session.access_token}` },
     })

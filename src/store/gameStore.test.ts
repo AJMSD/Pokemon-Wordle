@@ -4,7 +4,7 @@ import { getJSTDateKey } from '../utils/pokemonUtils'
 
 describe('gameStore authenticated submit flow', () => {
   beforeEach(() => {
-    vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co')
+    vi.stubEnv('VITE_API_URL', 'https://api.example.test')
     localStorage.clear()
     useGameStore.getState().setStorageScope(null)
     useGameStore.setState({

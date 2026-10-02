@@ -1,7 +1,7 @@
 # Deployment Guide
 
 Wurmple is fully self-hosted on **ajmsd** (Ubuntu, Docker) and reached through
-the `ajmsd-ops` Cloudflare tunnel. Nothing depends on Supabase's hosted service.
+the `ajmsd-ops` Cloudflare tunnel. There is no third-party backend.
 
 | Hostname | Serves | Local port |
 |---|---|---|
@@ -13,7 +13,7 @@ the `ajmsd-ops` Cloudflare tunnel. Nothing depends on Supabase's hosted service.
 
 ## Architecture
 
-`selfhost/docker-compose.yml` runs a lean subset of Supabase:
+`selfhost/docker-compose.yml` runs a lean backend built from open-source components:
 
 | Service | Image | Memory cap | Role |
 |---|---|---|---|
@@ -74,7 +74,7 @@ using the service role, so new tables need no client write policies.
 
 ```bash
 npm install
-cp .env.example .env.local   # point VITE_SUPABASE_URL at the API you want
+cp .env.example .env.local   # point VITE_API_URL at the API you want
 npm run dev
 ```
 

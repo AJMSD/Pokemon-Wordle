@@ -484,7 +484,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   signUp: async (email, password, username) => {
     // Validate email against disposable blocklist first
     try {
-      const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL) as string;
+      const supabaseUrl = (import.meta.env.VITE_API_URL) as string;
       const validateRes = await fetch(`${supabaseUrl}/functions/v1/validate-email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -518,7 +518,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
 
     set({ pendingEmail: email });
 
-    const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL) as string;
+    const supabaseUrl = (import.meta.env.VITE_API_URL) as string;
     const { data: { session: newSession } } = await supabase.auth.getSession();
     if (newSession) {
       const res = await fetch(`${supabaseUrl}/functions/v1/create-profile`, {
@@ -694,7 +694,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     const { session, profile } = get();
     if (!session) return { error: 'Sign in first, Trainer!' };
 
-    const base = import.meta.env.VITE_SUPABASE_URL as string;
+    const base = import.meta.env.VITE_API_URL as string;
     const prevProfile = profile;
 
     set(state => ({
@@ -740,7 +740,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       return fetchMeInFlight.promise;
     }
 
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const supabaseUrl = import.meta.env.VITE_API_URL as string;
     const request = (async () => {
       try {
         const res = await fetch(`${supabaseUrl}/functions/v1/get-me`, {
@@ -811,7 +811,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       },
     }));
 
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const supabaseUrl = import.meta.env.VITE_API_URL as string;
     try {
       const res = await fetch(`${supabaseUrl}/functions/v1/set-display-ball`, {
         method: 'PATCH',
@@ -880,7 +880,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         : null,
     }));
 
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const supabaseUrl = import.meta.env.VITE_API_URL as string;
     try {
       const res = await fetch(`${supabaseUrl}/functions/v1/dismiss-tier-prompt`, {
         method: 'PATCH',
@@ -912,7 +912,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     const { session } = get();
     if (!session) return { error: "You're not signed in, Trainer." };
 
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const supabaseUrl = import.meta.env.VITE_API_URL as string;
     try {
       const res = await fetch(`${supabaseUrl}/functions/v1/create-profile`, {
         method: 'POST',

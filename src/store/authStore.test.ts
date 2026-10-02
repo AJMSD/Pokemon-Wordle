@@ -15,7 +15,7 @@ function deferred<T>() {
 
 describe('authStore display ball sync', () => {
   beforeEach(() => {
-    vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co')
+    vi.stubEnv('VITE_API_URL', 'https://api.example.test')
     localStorage.clear()
 
     useAuthStore.setState({
@@ -118,7 +118,7 @@ describe('authStore stats hydration', () => {
   }
 
   beforeEach(() => {
-    vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co')
+    vi.stubEnv('VITE_API_URL', 'https://api.example.test')
     localStorage.clear()
     useAuthStore.setState({
       user: null,
@@ -248,7 +248,7 @@ describe('authStore stats hydration', () => {
 
 describe('authStore cache lifecycle', () => {
   beforeEach(() => {
-    vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co')
+    vi.stubEnv('VITE_API_URL', 'https://api.example.test')
     localStorage.clear()
   })
 
@@ -358,7 +358,7 @@ describe('authStore cache lifecycle', () => {
 
 describe('authStore sign-in timeout safety', () => {
   beforeEach(() => {
-    vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co')
+    vi.stubEnv('VITE_API_URL', 'https://api.example.test')
     localStorage.clear()
     useAuthStore.setState({
       user: null,

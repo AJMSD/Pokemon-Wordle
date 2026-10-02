@@ -38,9 +38,10 @@ test.describe('Guest game flow', () => {
     await input.press('Enter')
     await page.waitForTimeout(1500)
 
-    // Ability hint should still be hidden after 2 guesses
-    const hiddenValue = page.locator('.hidden-value')
-    await expect(hiddenValue).toBeVisible()
+    // Ability hint should still be hidden after 2 guesses (all hints use
+    // .hidden-value while locked, so target the ability countdown text)
+    const abilityHidden = page.locator('.hidden-value', { hasText: /unlocks in 1 more guess/i })
+    await expect(abilityHidden).toBeVisible()
   })
 
   test('ability hint is revealed after 3rd guess', async ({ page }) => {

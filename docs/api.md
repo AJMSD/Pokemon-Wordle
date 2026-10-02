@@ -1,6 +1,6 @@
 # API Reference
 
-All endpoints are Supabase Edge Functions, self-hosted on ajmsd at:
+All endpoints are Deno edge functions, self-hosted on ajmsd at:
 `https://wurmple-api.ajmsd.space/functions/v1/<function-name>`
 
 Requests are rate limited per client IP at the gateway and per user/IP in each

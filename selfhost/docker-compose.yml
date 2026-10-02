@@ -1,4 +1,4 @@
-# Lean self-hosted Supabase for Wurmple (Pokémon Wordle).
+# Lean self-hosted backend for Wurmple (Pokémon Wordle).
 # Only the services the app uses: Postgres, GoTrue (auth), PostgREST (used by
 # edge functions via supabase-js), Edge Runtime, and an nginx gateway that also
 # serves the built frontend. Realtime, Storage, Studio, analytics, imgproxy,
