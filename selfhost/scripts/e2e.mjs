@@ -36,6 +36,21 @@ async function call(url, { method = 'GET', token = anon, body, headers = {} } = 
   return { status: res.status, json };
 }
 
+// Browser preflights (Node's fetch skips CORS, so check the headers directly).
+const site = process.env.SITE_URL ?? 'https://wurmple.ajmsd.space';
+for (const path of ['/auth/v1/user', '/auth/v1/token?grant_type=password', '/rest/v1/profiles', '/functions/v1/get-me']) {
+  const res = await fetch(`${api}${path}`, {
+    method: 'OPTIONS',
+    headers: {
+      Origin: site,
+      'Access-Control-Request-Method': 'GET',
+      'Access-Control-Request-Headers': 'apikey,authorization,content-type,x-client-info,x-supabase-api-version',
+    },
+  });
+  const allowed = res.headers.get('access-control-allow-origin');
+  check(`CORS preflight ${path.split('?')[0]}`, res.ok && (allowed === site || allowed === '*'), `status ${res.status}, allow-origin ${allowed}`);
+}
+
 let userId;
 try {
   const created = await call(`${admin}/auth/v1/admin/users`, {
