@@ -108,6 +108,15 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // Only today's puzzle (JST) can be played; prevents replaying past days to farm stats.
+    const todayKey = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
+    if (puzzle_date_key !== todayKey) {
+      return new Response(JSON.stringify({ error: "This puzzle has ended. Refresh for today's Pokémon." }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Determine caller identity and verification status
     let userId: string | null = null;
     let isVerified = false;
@@ -132,12 +141,13 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Rate limit: 10 guesses/minute per user/guest
+    // Rate limit: 10 guesses/minute per user; guests are keyed by IP, which many
+    // players can share (mobile CGNAT, schools), so they get a larger bucket.
     const rateLimitKey = userId
       ? `submit-guess:user:${userId}`
       : `submit-guess:ip:${getClientIP(req)}`;
 
-    const { allowed, retryAfter } = await checkRateLimit(supabaseAdmin, rateLimitKey, 10, 60);
+    const { allowed, retryAfter } = await checkRateLimit(supabaseAdmin, rateLimitKey, userId ? 10 : 30, 60);
     if (!allowed) {
       return new Response(
         JSON.stringify({ error: 'Rate limit exceeded', retry_after: retryAfter }),
@@ -244,7 +254,7 @@ Deno.serve(async (req: Request) => {
         }).eq('user_id', userId);
 
         const { data: profile } = partStreak >= 7
-          ? await supabaseAdmin.from('profiles').select('user_id').eq('user_id', userId).single()
+          ? await supabaseAdmin.from('profiles').select('id').eq('id', userId).single()
           : { data: null };
 
         const participationBalls = checkBallUnlocks({

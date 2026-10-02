@@ -1,5 +1,5 @@
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { isWindowExpired, isRateLimited, calcRetryAfterSeconds } from '../../../src/logic/rateLimitCalc.ts';
+import { calcRetryAfterSeconds } from '../../../src/logic/rateLimitCalc.ts';
 
 export async function checkRateLimit(
   supabaseAdmin: SupabaseClient,
@@ -7,40 +7,28 @@ export async function checkRateLimit(
   maxRequests: number,
   windowSeconds: number
 ): Promise<{ allowed: boolean; retryAfter?: number }> {
-  const now = new Date();
+  const now = Date.now();
 
-  const { data: existing } = await supabaseAdmin
-    .from('rate_limits')
-    .select('count, window_start')
-    .eq('key', key)
-    .single();
+  // Single atomic upsert (see migration 20261002000001_atomic_rate_limit.sql).
+  const { data, error } = await supabaseAdmin.rpc('rate_limit_hit', {
+    p_key: key,
+    p_window_seconds: windowSeconds,
+  });
 
-  if (!existing) {
-    await supabaseAdmin
-      .from('rate_limits')
-      .insert({ key, count: 1, window_start: now.toISOString() });
+  if (error || !data?.[0]) {
+    // Fail open: a limiter hiccup shouldn't take the game down. nginx still
+    // enforces per-IP limits in front of every function.
+    console.error(JSON.stringify({ fn: 'rateLimit', event: 'error', key, error: error?.message }));
     return { allowed: true };
   }
 
-  if (isWindowExpired(existing.window_start, windowSeconds, now.getTime())) {
-    // Window expired — reset
-    await supabaseAdmin
-      .from('rate_limits')
-      .update({ count: 1, window_start: now.toISOString() })
-      .eq('key', key);
-    return { allowed: true };
-  }
+  const { hit_count, window_start } = data[0] as { hit_count: number; window_start: string };
 
-  if (isRateLimited(existing.count, maxRequests)) {
-    const retryAfter = calcRetryAfterSeconds(existing.window_start, windowSeconds, now.getTime());
+  if (hit_count > maxRequests) {
+    const retryAfter = calcRetryAfterSeconds(window_start, windowSeconds, now);
     console.warn(JSON.stringify({ fn: 'rateLimit', event: 'rate_limited', key, retryAfter }));
     return { allowed: false, retryAfter };
   }
-
-  await supabaseAdmin
-    .from('rate_limits')
-    .update({ count: existing.count + 1 })
-    .eq('key', key);
 
   return { allowed: true };
 }

@@ -95,7 +95,8 @@ services:
       GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
       GOTRUE_MAILER_AUTOCONFIRM: "false"
       GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED: "true"
-      GOTRUE_RATE_LIMIT_EMAIL_SENT: 30
+      # 12/hour caps auth email at 288/day, under Brevo free tier (300/day)
+      GOTRUE_RATE_LIMIT_EMAIL_SENT: 12
       # Rate-limit per real client IP (set by Cloudflare), not per proxy
       GOTRUE_RATE_LIMIT_HEADER: CF-Connecting-IP
       GOTRUE_MAILER_EXTERNAL_HOSTS: wurmple-api.ajmsd.space
@@ -149,7 +150,7 @@ services:
       - deno-cache:/root/.cache/deno
     environment:
       JWT_SECRET: ${JWT_SECRET}
-      SUPABASE_URL: http://gateway:8000
+      SUPABASE_URL: http://gateway:8001 # internal, unthrottled listener
       SUPABASE_PUBLIC_URL: ${API_EXTERNAL_URL}
       SUPABASE_ANON_KEY: ${ANON_KEY}
       SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}

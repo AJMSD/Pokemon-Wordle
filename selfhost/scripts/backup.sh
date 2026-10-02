@@ -13,3 +13,7 @@ docker compose exec -T db pg_dump -U supabase_admin -d postgres \
   | gzip > "$backups/wurmple_$(date +%Y%m%d_%H%M%S).sql.gz"
 
 find "$backups" -name 'wurmple_*.sql.gz' -mtime +14 -delete
+
+# Nightly maintenance: drop rate-limit counters whose windows ended long ago.
+docker compose exec -T db psql -q -U supabase_admin -d postgres \
+  -c "delete from public.rate_limits where window_start < now() - interval '1 day';"
