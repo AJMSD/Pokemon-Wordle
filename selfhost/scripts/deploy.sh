@@ -24,7 +24,8 @@ git merge -q --ff-only origin/master
 
 changed() {
   [[ "${1:-}" == "--force" || "$old" == "$new" ]] && return 0
-  git diff --quiet "$old" "$new" -- "${@:2}" && return 1 || return 0
+  # Paths are repo-relative; run from the repo root regardless of cwd.
+  git -C "$repo" diff --quiet "$old" "$new" -- "${@:2}" && return 1 || return 0
 }
 
 set -a; . "$selfhost/.env"; set +a
