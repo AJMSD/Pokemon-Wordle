@@ -17,7 +17,7 @@ const OfflineBanner: React.FC = () => {
   if (!isOffline) return null
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-50 bg-pokemon-red text-white text-sm text-center py-2 px-4">
+    <div className="fixed top-0 left-0 right-0 z-50 bg-pokemon-red text-white text-sm text-center py-2 px-4 border-b-2 border-gray-900" role="status">
       No connection — game data may be stale
     </div>
   )

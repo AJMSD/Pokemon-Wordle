@@ -11,10 +11,7 @@ interface TierPromptToastProps {
 const TierPromptToast: React.FC<TierPromptToastProps> = ({ tierId, tierName, onSwitch, onDismiss }) => {
   return (
     <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4">
-      <div
-        className="bg-white rounded-xl shadow-lg border border-gray-200 p-4 flex items-center gap-3"
-        style={{ animation: 'fadeInScale 0.3s ease-out' }}
-      >
+      <div className="bg-white pixel-frame pop-in p-4 flex items-center gap-3" role="status">
         <img
           src={ballSpriteUrl(tierId)}
           alt={tierName}
@@ -26,13 +23,13 @@ const TierPromptToast: React.FC<TierPromptToastProps> = ({ tierId, tierName, onS
           <div className="flex gap-2 mt-2">
             <button
               onClick={onSwitch}
-              className="text-xs bg-pokemon-red text-white font-bold px-3 py-1 rounded-full hover:bg-red-700 transition-colors"
+              className="pixel-btn text-xs bg-pokemon-red text-white font-bold px-3 min-h-[44px] hover:bg-red-700"
             >
               Switch
             </button>
             <button
               onClick={onDismiss}
-              className="text-xs text-gray-500 px-3 py-1 rounded-full hover:bg-gray-100 transition-colors border border-gray-200"
+              className="pixel-btn text-xs bg-white text-gray-600 px-3 min-h-[44px] hover:bg-gray-100"
             >
               Later
             </button>

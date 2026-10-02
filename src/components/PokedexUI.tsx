@@ -362,7 +362,7 @@ const PokedexUI: React.FC<PokedexUIProps> = ({
         {/* Pokemon name input form */}
         <div className="guess-input-container">
           {staleLock && (
-            <div className="flex items-center justify-between bg-orange-50 border border-orange-300 text-orange-800 text-sm rounded-lg px-3 py-2 mb-2">
+            <div className="flex items-center justify-between bg-orange-50 border-2 border-orange-500 text-orange-800 text-sm px-3 py-2 mb-2">
               <span>⚠️ That game state changed elsewhere. Refresh to continue.</span>
               <button
                 className="underline text-orange-700 ml-2"

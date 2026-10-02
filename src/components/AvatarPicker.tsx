@@ -56,8 +56,8 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
-        <h2 className="text-xl font-bold text-center text-gray-900 mb-4">Choose your trainer</h2>
+      <div className="bg-white pixel-frame w-full max-w-sm p-6" role="dialog" aria-modal="true" aria-labelledby="avatar-picker-title">
+        <h2 id="avatar-picker-title" className="text-xl font-bold text-center text-gray-900 mb-4">Choose your trainer</h2>
 
         <div className="flex items-center gap-3 mb-3">
           <input
@@ -65,14 +65,15 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search Pokémon..."
-            className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-pokemon-red/40"
+            aria-label="Search Pokémon"
+            className="pixel-input flex-1 min-w-0 text-sm bg-white px-3 py-1.5"
           />
           <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none whitespace-nowrap">
             <input
               type="checkbox"
               checked={isShiny}
               onChange={e => setIsShiny(e.target.checked)}
-              className="rounded border-gray-300 text-pokemon-red focus:ring-pokemon-red"
+              className="w-4 h-4 accent-pokemon-red pixel-focus"
             />
             Shiny
           </label>
@@ -85,7 +86,8 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
             <button
               key={p.id}
               onClick={() => setSelected(p.id)}
-              className={`rounded-lg border-2 p-1 transition-colors flex flex-col items-center ${
+              aria-pressed={selected === p.id}
+              className={`border-2 p-1 flex flex-col items-center pixel-focus ${
                 selected === p.id
                   ? 'border-pokemon-red bg-red-50'
                   : 'border-gray-200 hover:border-gray-400'
@@ -106,14 +108,14 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
         <div className="flex gap-3">
           <button
             onClick={onClose}
-            className="flex-1 py-2 rounded-lg border border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors"
+            className="pixel-btn flex-1 min-h-[44px] bg-white text-gray-700 font-bold hover:bg-gray-50"
           >
             Cancel
           </button>
           <button
             onClick={handleConfirm}
             disabled={!selected || saving}
-            className="flex-1 py-2 rounded-lg bg-pokemon-red text-white font-bold hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="pixel-btn flex-1 min-h-[44px] bg-pokemon-red text-white font-bold hover:bg-red-700 disabled:opacity-50"
           >
             {saving ? 'Saving...' : 'Confirm'}
           </button>

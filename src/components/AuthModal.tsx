@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useAuthStore } from '../store/authStore'
+import { Close } from 'pixelarticons/react/Close'
 
 type AuthView = 'login' | 'signup' | 'forgot-password' | 'verify-email' | 'reset-password' | 'username-setup'
 const LOGIN_TIMEOUT_MS = 15000
@@ -188,13 +189,13 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
     })
   }
 
-  const inputCls = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-400/40 focus:border-red-500 transition-colors'
-  const primaryCls = 'w-full py-2.5 bg-pokemon-red text-white rounded-lg font-bold text-sm hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
-  const googleCls = 'w-full py-2.5 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2'
-  const linkCls = 'text-pokemon-red hover:underline text-sm cursor-pointer'
+  const inputCls = 'pixel-input w-full px-3 py-2 text-sm bg-white'
+  const primaryCls = 'pixel-btn w-full py-2.5 bg-pokemon-red text-white font-bold text-sm hover:bg-red-700 disabled:opacity-50'
+  const googleCls = 'pixel-btn w-full py-2.5 bg-white text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-center gap-2'
+  const linkCls = 'text-pokemon-red hover:underline text-sm cursor-pointer pixel-focus'
   const dividerEl = (
     <div className="relative my-1">
-      <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200" /></div>
+      <div className="absolute inset-0 flex items-center"><div className="w-full border-t-2 border-dashed border-gray-300" /></div>
       <div className="relative flex justify-center"><span className="bg-white px-2 text-xs text-gray-400">or</span></div>
     </div>
   )
@@ -205,12 +206,12 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
       content: (
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
-            <label className="block text-xs text-gray-700 mb-1">Email</label>
-            <input type="email" className={inputCls} value={email} onChange={e => setEmail(e.target.value)} required autoFocus />
+            <label htmlFor="login-email" className="block text-xs text-gray-700 mb-1">Email</label>
+            <input id="login-email" type="email" className={inputCls} value={email} onChange={e => setEmail(e.target.value)} required autoFocus />
           </div>
           <div>
-            <label className="block text-xs text-gray-700 mb-1">Password</label>
-            <input type="password" className={inputCls} value={password} onChange={e => setPassword(e.target.value)} required />
+            <label htmlFor="login-password" className="block text-xs text-gray-700 mb-1">Password</label>
+            <input id="login-password" type="password" className={inputCls} value={password} onChange={e => setPassword(e.target.value)} required />
           </div>
           {error && <p className="text-red-600 text-xs">{error}</p>}
           <button type="submit" className={primaryCls} disabled={isLoading}>{isLoading ? 'Verifying ID…' : 'Sign In'}</button>
@@ -228,16 +229,16 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
       content: (
         <form onSubmit={handleSignup} className="space-y-4">
           <div>
-            <label className="block text-xs text-gray-700 mb-1">Username</label>
-            <input type="text" className={inputCls} value={username} onChange={e => setUsername(e.target.value)} required minLength={3} maxLength={20} autoFocus placeholder="3–20 characters" />
+            <label htmlFor="signup-username" className="block text-xs text-gray-700 mb-1">Username</label>
+            <input id="signup-username" type="text" className={inputCls} value={username} onChange={e => setUsername(e.target.value)} required minLength={3} maxLength={20} autoFocus placeholder="3–20 characters" />
           </div>
           <div>
-            <label className="block text-xs text-gray-700 mb-1">Email</label>
-            <input type="email" className={inputCls} value={email} onChange={e => setEmail(e.target.value)} required />
+            <label htmlFor="signup-email" className="block text-xs text-gray-700 mb-1">Email</label>
+            <input id="signup-email" type="email" className={inputCls} value={email} onChange={e => setEmail(e.target.value)} required />
           </div>
           <div>
-            <label className="block text-xs text-gray-700 mb-1">Password</label>
-            <input type="password" className={inputCls} value={password} onChange={e => setPassword(e.target.value)} required />
+            <label htmlFor="signup-password" className="block text-xs text-gray-700 mb-1">Password</label>
+            <input id="signup-password" type="password" className={inputCls} value={password} onChange={e => setPassword(e.target.value)} required />
             {password.length > 0 && (
               <p className={`text-xs mt-1 ${password.length >= 8 ? 'text-green-600' : 'text-gray-400'}`}>
                 {password.length >= 8 ? '✓ 8+ characters' : `${password.length}/8 — keep going!`}
@@ -258,8 +259,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
         <form onSubmit={handleForgotPassword} className="space-y-4">
           <p className="text-sm text-gray-600">Enter your email and we'll send a recovery link.</p>
           <div>
-            <label className="block text-xs text-gray-700 mb-1">Email</label>
-            <input type="email" className={inputCls} value={email} onChange={e => setEmail(e.target.value)} required autoFocus />
+            <label htmlFor="forgot-email" className="block text-xs text-gray-700 mb-1">Email</label>
+            <input id="forgot-email" type="email" className={inputCls} value={email} onChange={e => setEmail(e.target.value)} required autoFocus />
           </div>
           {error && <p className="text-red-600 text-xs">{error}</p>}
           {success && <p className="text-green-600 text-xs">{success}</p>}
@@ -282,11 +283,11 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
           <button
             onClick={handleResend}
             disabled={isLoading || resendCooldown > 0}
-            className="text-pokemon-red hover:underline text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            className="text-pokemon-red hover:underline text-sm disabled:opacity-50 disabled:cursor-not-allowed pixel-focus"
           >
             {isLoading ? 'Resending…' : resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend Verification'}
           </button>
-          <div><button onClick={onClose} className="text-xs text-gray-400 hover:text-gray-600">Continue as Guest</button></div>
+          <div><button onClick={onClose} className="text-xs text-gray-500 hover:text-gray-700 pixel-focus">Continue as Guest</button></div>
         </div>
       ),
     },
@@ -295,8 +296,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
       content: (
         <form onSubmit={handleResetPassword} className="space-y-4">
           <div>
-            <label className="block text-xs text-gray-700 mb-1">New Password</label>
-            <input type="password" className={inputCls} value={password} onChange={e => setPassword(e.target.value)} required autoFocus />
+            <label htmlFor="reset-password" className="block text-xs text-gray-700 mb-1">New Password</label>
+            <input id="reset-password" type="password" className={inputCls} value={password} onChange={e => setPassword(e.target.value)} required autoFocus />
             {password.length > 0 && (
               <p className={`text-xs mt-1 ${password.length >= 8 ? 'text-green-600' : 'text-gray-400'}`}>
                 {password.length >= 8 ? '✓ 8+ characters' : `${password.length}/8 — keep going!`}
@@ -304,8 +305,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
             )}
           </div>
           <div>
-            <label className="block text-xs text-gray-700 mb-1">Confirm Password</label>
-            <input type="password" className={inputCls} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required />
+            <label htmlFor="reset-confirm-password" className="block text-xs text-gray-700 mb-1">Confirm Password</label>
+            <input id="reset-confirm-password" type="password" className={inputCls} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required />
             {confirmPassword.length > 0 && password !== confirmPassword && (
               <p className="text-xs text-red-500 mt-1">Passwords don't match!</p>
             )}
@@ -321,8 +322,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
         <form onSubmit={handleUsernameSetup} className="space-y-4">
           <p className="text-sm text-gray-600">One last step — pick your Trainer name to complete registration.</p>
           <div>
-            <label className="block text-xs text-gray-700 mb-1">Username</label>
-            <input type="text" className={inputCls} value={username} onChange={e => setUsername(e.target.value)} required minLength={3} maxLength={20} autoFocus placeholder="3–20 characters" />
+            <label htmlFor="setup-username" className="block text-xs text-gray-700 mb-1">Username</label>
+            <input id="setup-username" type="text" className={inputCls} value={username} onChange={e => setUsername(e.target.value)} required minLength={3} maxLength={20} autoFocus placeholder="3–20 characters" />
           </div>
           {error && <p className="text-red-600 text-xs">{error}</p>}
           <button type="submit" className={primaryCls} disabled={isLoading}>{isLoading ? 'Registering name…' : 'Save Trainer Name'}</button>
@@ -337,19 +338,22 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={canClose ? onClose : undefined}>
       <div className="absolute inset-0 bg-black/50" />
       <div
-        className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6"
+        className="relative bg-white pixel-frame w-full max-w-sm p-6"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="auth-modal-title"
         onClick={e => e.stopPropagation()}
       >
         {canClose && (
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-2xl leading-none"
+            className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 pixel-focus"
             aria-label="Close"
           >
-            ×
+            <Close width={24} height={24} aria-hidden="true" />
           </button>
         )}
-        <h2 className="text-xl font-bold text-gray-900 mb-5">{title}</h2>
+        <h2 id="auth-modal-title" className="text-xl font-bold text-gray-900 mb-5 pr-8">{title}</h2>
         {content}
       </div>
     </div>

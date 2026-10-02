@@ -10,6 +10,7 @@ import OfflineBanner from './components/OfflineBanner'
 import useToast from './hooks/useToast'
 import { ToastProps } from './components/Toast'
 import { getTierUpgradePrompt } from './logic/tierLogic'
+import { Close } from 'pixelarticons/react/Close'
 
 
 const CollectionPage = lazy(() => import('./components/CollectionPage'))
@@ -17,7 +18,7 @@ const ProfilePage = lazy(() => import('./components/ProfilePage'))
 const AuthModal = lazy(() => import('./components/AuthModal'))
 
 function PageSkeleton() {
-  return <div className="animate-pulse bg-pokemon-red/10 rounded-xl h-96 w-full" />
+  return <div className="animate-pulse bg-pokemon-red/10 h-96 w-full" />
 }
 
 const STREAK_MILESTONES: Record<number, string> = {
@@ -178,7 +179,7 @@ function App() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 bg-white/50 backdrop-blur-sm rounded-lg shadow-lg my-4">
+    <div className="mx-auto max-w-6xl px-4 py-6 bg-white/70 pixel-frame my-4">
       <OfflineBanner />
       <div className="hidden md:block">
         <Header
@@ -190,15 +191,15 @@ function App() {
         />
       </div>
       {showUnverifiedBanner && (
-        <div className="flex items-center justify-between bg-yellow-50 border border-yellow-300 text-yellow-800 text-sm rounded-lg px-4 py-3 mb-4 gap-4">
+        <div className="flex items-center justify-between bg-yellow-50 border-2 border-yellow-600 text-yellow-800 text-sm px-4 py-3 mb-4 gap-4">
           <span>
             Verify your email to start tracking your Trainer stats.{' '}
-            <button onClick={handleResendVerification} className="underline hover:text-yellow-900">
+            <button onClick={handleResendVerification} className="underline hover:text-yellow-900 pixel-focus">
               Resend verification
             </button>
           </span>
-          <button onClick={() => setBannerDismissed(true)} className="text-yellow-600 hover:text-yellow-900 text-lg leading-none flex-shrink-0" aria-label="Dismiss">
-            ✕
+          <button onClick={() => setBannerDismissed(true)} className="text-yellow-700 hover:text-yellow-900 flex-shrink-0 pixel-focus" aria-label="Dismiss">
+            <Close width={24} height={24} aria-hidden="true" />
           </button>
         </div>
       )}

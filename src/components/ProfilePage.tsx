@@ -4,6 +4,7 @@ import { getAvatarUrl } from '../utils/avatarUtils'
 import DefaultAvatar from './DefaultAvatar'
 import AvatarPicker from './AvatarPicker'
 import useAvatarSrc from '../hooks/useAvatarSrc'
+import { ArrowLeft } from 'pixelarticons/react/ArrowLeft'
 import { ballSpriteUrl } from '../lib/sprites'
 
 interface ProfilePageProps {
@@ -53,19 +54,17 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
     <div className="max-w-sm mx-auto py-6">
       <button
         onClick={onBack}
-        className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-6 transition-colors"
+        className="flex items-center gap-1 min-h-[44px] text-sm text-gray-500 hover:text-gray-700 mb-4 pixel-focus"
       >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-          <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
+        <ArrowLeft width={24} height={24} aria-hidden="true" />
         Back to Game
       </button>
 
-      <div className="bg-white rounded-xl shadow p-6">
+      <div className="bg-white pixel-frame p-6">
         {/* Avatar + username */}
         <div className="flex flex-col items-center gap-3 mb-6">
           {avatarSrc ? (
-            <img src={avatarSrc} alt="avatar" className="sprite w-24 h-24 rounded-xl border-2 border-gray-100 shadow-sm" decoding="async" width={96} height={96} />
+            <img src={avatarSrc} alt="avatar" className="sprite w-24 h-24 border-2 border-gray-900 bg-gray-50" decoding="async" width={96} height={96} />
           ) : (
             <DefaultAvatar size={96} />
           )}
@@ -85,7 +84,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
           </div>
           <button
             onClick={() => setShowPicker(true)}
-            className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold px-3 py-1.5 rounded-full transition-colors"
+            className="pixel-btn text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold px-3 min-h-[44px]"
           >
             Change Avatar
           </button>
@@ -93,7 +92,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
 
         {/* Stats section */}
         {isGuest ? (
-          <div className="text-center py-6 bg-gray-50 rounded-xl">
+          <div className="text-center py-6 bg-gray-50 border-2 border-gray-200">
             <p className="text-sm font-bold text-gray-700 mb-0.5">Sign in to track your stats</p>
             <p className="text-xs text-gray-400">Win streaks, guesses, and more</p>
           </div>
@@ -101,10 +100,10 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
           <div className="animate-pulse space-y-2">
             <div className="grid grid-cols-4 gap-2">
               {[...Array(4)].map((_, i) => (
-                <div key={i} className="h-12 bg-gray-100 rounded-lg" />
+                <div key={i} className="h-12 bg-gray-100" />
               ))}
             </div>
-            <div className="h-8 bg-gray-100 rounded-lg" />
+            <div className="h-8 bg-gray-100" />
           </div>
         ) : (
           <>
@@ -115,7 +114,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
                   onClick={() => {
                     void refreshProfile()
                   }}
-                  className="text-xs text-pokemon-red font-bold hover:underline"
+                  className="text-xs text-pokemon-red font-bold hover:underline pixel-focus"
                 >
                   Retry
                 </button>
@@ -125,24 +124,24 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
             {stats ? (
               <>
                 <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div className="bg-gray-50 rounded-xl p-3 text-center">
+                  <div className="bg-gray-50 border-2 border-gray-200 p-3 text-center">
                     <p className="text-2xl font-bold text-gray-900">{stats.current_streak}</p>
                     <p className="text-xs text-gray-500 mt-0.5">Current Streak</p>
                   </div>
-                  <div className="bg-gray-50 rounded-xl p-3 text-center">
+                  <div className="bg-gray-50 border-2 border-gray-200 p-3 text-center">
                     <p className="text-2xl font-bold text-gray-900">{stats.max_streak}</p>
                     <p className="text-xs text-gray-500 mt-0.5">Best Streak</p>
                   </div>
-                  <div className="bg-gray-50 rounded-xl p-3 text-center">
+                  <div className="bg-gray-50 border-2 border-gray-200 p-3 text-center">
                     <p className="text-2xl font-bold text-gray-900">{winPct}%</p>
                     <p className="text-xs text-gray-500 mt-0.5">Win Rate</p>
                   </div>
-                  <div className="bg-gray-50 rounded-xl p-3 text-center">
+                  <div className="bg-gray-50 border-2 border-gray-200 p-3 text-center">
                     <p className="text-2xl font-bold text-gray-900">{stats.avg_guesses > 0 ? stats.avg_guesses.toFixed(1) : '—'}</p>
                     <p className="text-xs text-gray-500 mt-0.5">Avg Guesses</p>
                   </div>
                 </div>
-                <div className="bg-gray-50 rounded-xl px-3 py-2.5 text-xs text-gray-500 text-center">
+                <div className="bg-gray-50 border-2 border-gray-200 px-3 py-2.5 text-xs text-gray-500 text-center">
                   {stats.total_participations} played · {stats.total_wins}W · {totalLosses}L
                 </div>
               </>

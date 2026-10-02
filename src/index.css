@@ -121,6 +121,21 @@
     box-shadow: inset var(--px) var(--px) 0 0 rgba(0, 0, 0, 0.18);
   }
 
+  /* Visible keyboard focus for plain icon/text buttons. */
+  .pixel-focus:focus-visible {
+    outline: var(--px) dashed var(--pixel-ink);
+    outline-offset: var(--px);
+  }
+
+  .pixel-circle {
+    clip-path: var(--pixel-circle);
+  }
+
+  /* Stepped pop-in for toasts and modals. */
+  .pop-in {
+    animation: fadeInScale 0.3s steps(3, end);
+  }
+
   /* Square tag. */
   .pixel-chip {
     display: inline-flex;
@@ -875,14 +890,14 @@ header h1 {
   50%  { opacity: 1; transform: scale(1.08); }
   100% { opacity: 1; transform: scale(1); }
 }
-.win-animate { animation: win-flash 0.6s ease-out forwards; will-change: transform, opacity; }
+.win-animate { animation: win-flash 0.6s steps(4, end) forwards; will-change: transform, opacity; }
 
 @keyframes ball-burst {
   0%   { transform: scale(0.3); opacity: 0; }
   60%  { transform: scale(1.25); opacity: 1; }
   100% { transform: scale(1); opacity: 1; }
 }
-.ball-burst-animate { animation: ball-burst 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; will-change: transform; }
+.ball-burst-animate { animation: ball-burst 0.5s steps(5, end) forwards; will-change: transform; }
 
 @keyframes guess-shake {
   0%, 100% { transform: translateX(0); }
@@ -934,7 +949,8 @@ header h1 {
   .sound-hole,
   .hint-glow,
   .unlock-ring-animate,
-  .ball-active-glow { animation: none !important; transition: none !important; }
+  .ball-active-glow,
+  .pop-in { animation: none !important; transition: none !important; }
   .pixel-btn:hover:not(:disabled),
   .pixel-btn:active:not(:disabled),
   .equip-btn:active:not(:disabled) { transform: none; }

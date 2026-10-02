@@ -4,6 +4,7 @@ import { isJsonEqual, readJsonCache, writeJsonCache } from '../lib/cache'
 import { ballSpriteUrl } from '../lib/sprites'
 import { BALLS_CACHE_PREFIX } from '../lib/profileCache'
 import { TIER_THRESHOLDS, getStreakTier, nextTier } from '../logic/tierLogic'
+import { ArrowLeft } from 'pixelarticons/react/ArrowLeft'
 
 interface CollectionPageProps {
   onBack: () => void
@@ -171,21 +172,22 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
     <div className="max-w-2xl mx-auto px-4 py-6">
       <button
         onClick={onBack}
-        className="flex items-center gap-2 text-sm text-gray-600 hover:text-pokemon-red transition-colors mb-6"
+        className="flex items-center gap-2 min-h-[44px] text-sm text-gray-600 hover:text-pokemon-red mb-4 pixel-focus"
       >
-        ← Back to Game
+        <ArrowLeft width={24} height={24} aria-hidden="true" />
+        Back to Game
       </button>
 
       <h2 className="text-2xl font-bold text-gray-800 mb-1">Ball Collection</h2>
       <p className="text-sm text-gray-500 mb-6">Earn balls by playing and achieving milestones.</p>
       {setBallError && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="mb-4 border-2 border-red-400 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
           {setBallError}
         </div>
       )}
 
       {isGuest ? (
-        <div className="mb-6 bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-xl p-4 text-center">
+        <div className="mb-6 bg-red-50 pixel-frame p-4 text-center">
           <p className="text-sm font-bold text-gray-800 mb-0.5">Sign in to start earning balls</p>
           <p className="text-xs text-gray-500">Track your streak and unlock achievement balls</p>
         </div>
@@ -210,19 +212,19 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
 
       {isInitialLoading ? (
         <div className="animate-pulse space-y-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+          <div className="bg-white pixel-frame p-4">
             <div className="flex items-center gap-3">
               {[...Array(4)].map((_, i) => (
                 <div key={i} className="flex flex-col items-center gap-1">
-                  <div className="w-14 h-14 rounded-full bg-gray-200" />
-                  <div className="w-10 h-3 bg-gray-200 rounded" />
+                  <div className="w-14 h-14 bg-gray-200" />
+                  <div className="w-10 h-3 bg-gray-200" />
                 </div>
               ))}
             </div>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {[...Array(6)].map((_, i) => (
-              <div key={i} className="h-32 bg-gray-100 rounded-xl" />
+              <div key={i} className="h-32 bg-gray-100" />
             ))}
           </div>
         </div>
@@ -235,7 +237,7 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
           {/* Standard tier track */}
           <section className="mb-8">
             <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-4">Streak Tier</h3>
-            <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+            <div className="bg-white pixel-frame p-4">
               <div className="flex w-full items-start pt-7">
                 {standardBalls.map((ball, i) => {
                   const isPast = ball.status === 'past_tier'
@@ -341,11 +343,11 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
                   <div
                     key={ball.id}
                     aria-current={isDisplay ? 'true' : undefined}
-                    className={`relative border-2 rounded-xl flex flex-col items-center transition-colors ${
+                    className={`relative border-2 flex flex-col items-center ${
                       isUnlocked
-                        ? 'border-gray-200 bg-white hover:border-pokemon-blue'
+                        ? 'border-gray-300 bg-white hover:border-pokemon-blue'
                         : 'border-gray-200 bg-gray-50 opacity-75'
-                    } ${isSelected ? 'border-pokemon-blue ring-1 ring-pokemon-blue' : ''} ${isDisplay ? 'equipped-frame' : ''}`}
+                    } ${isSelected ? 'border-pokemon-blue outline outline-2 outline-pokemon-blue' : ''} ${isDisplay ? 'equipped-frame' : ''}`}
                   >
                     {isDisplay && (
                       <span className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap z-10"><EquippedRibbon /></span>
@@ -356,7 +358,7 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
                       onClick={() => canSelect && setSelectedBall(isSelected ? null : ball.id)}
                       aria-label={`${ball.display_name}${isUnlocked ? '' : ', locked'}${isDisplay ? ', equipped' : ''}`}
                       aria-pressed={canSelect ? isSelected : undefined}
-                      className={`w-full p-4 flex flex-col items-center gap-2 ${canSelect ? 'cursor-pointer' : 'cursor-default'}`}
+                      className={`w-full p-4 flex flex-col items-center gap-2 pixel-focus ${canSelect ? 'cursor-pointer' : 'cursor-default'}`}
                     >
                       {isUnlocked ? (
                         <img
@@ -369,7 +371,7 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
                           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
                         />
                       ) : (
-                        <div className="w-12 h-12 rounded-full bg-gray-300 border-2 border-gray-400 flex items-center justify-center">
+                        <div className="w-12 h-12 pixel-circle bg-gray-300 flex items-center justify-center">
                           <span className="text-gray-500 text-lg" aria-hidden="true">?</span>
                         </div>
                       )}
