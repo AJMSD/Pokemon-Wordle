@@ -4,7 +4,8 @@ All endpoints are Supabase Edge Functions, self-hosted on ajmsd at:
 `https://wurmple-api.ajmsd.space/functions/v1/<function-name>`
 
 Requests are rate limited per client IP at the gateway and per user/IP in each
-function; see RUNBOOK.md. Exceeding a limit returns HTTP 429 with `Retry-After`.
+function; see RUNBOOK.md. Exceeding a limit returns HTTP 429 (function-level
+limits also send `Retry-After` and `retry_after` in the body).
 
 All responses are JSON. All endpoints support CORS preflight.
 
