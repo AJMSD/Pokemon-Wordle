@@ -1,8 +1,9 @@
 import { create } from 'zustand';
-import { clearSupabaseAuthStorage, supabase } from '../lib/supabase';
-import { isJsonEqual, readJsonCache, removeCacheKey, removeCacheKeysByPrefix, writeJsonCache } from '../lib/cache';
+import { clearSupabaseAuthStorage, readPersistedSessionUserId, supabase } from '../lib/supabase';
+import { isJsonEqual, removeCacheKey, removeCacheKeysByPrefix } from '../lib/cache';
+import { migrateLegacyUserCache, readProfileCache, writeCachedAvatar, writeProfileCache } from '../lib/profileCache';
 import { useGameStore } from './gameStore';
-import type { User, Session } from '../lib/supabase';
+import type { AuthChangeEvent, User, Session } from '../lib/supabase';
 import type { AvatarConfig } from '../utils/avatarUtils';
 
 export const BALL_NAMES: Record<string, string> = {
@@ -39,10 +40,17 @@ interface Stats {
   best_guess_summary: string | null;
 }
 
-interface UserCachePayload {
+interface CachedAvatar {
+  src: string;
+  dataUrl: string;
+}
+
+/** Cached display data for the persisted session, shown while auth is still resolving. */
+interface BootProfile {
   userId: string;
-  profile: Profile | null;
+  profile: Profile;
   stats: Stats | null;
+  avatar: CachedAvatar | null;
 }
 
 interface AuthState {
@@ -61,6 +69,8 @@ interface AuthState {
   isGuest: boolean;
   pendingPasswordRecovery: boolean;
   pendingEmail: string | null;
+  bootProfile: BootProfile | null;
+  cachedAvatar: CachedAvatar | null;
 }
 
 interface AuthActions {
@@ -79,28 +89,28 @@ interface AuthActions {
   dismissTierPromptForever: () => Promise<{ error: string | null }>;
   setupUsername: (username: string) => Promise<{ error: string | null }>;
   clearPasswordRecovery: () => void;
+  cacheAvatar: (src: string, dataUrl: string) => void;
 }
 
 let fetchMeInFlight: { token: string; promise: Promise<{ error: string | null }> } | null = null;
 let passwordResetInFlight: Promise<{ error: string | null }> | null = null;
 let authInitInFlight: Promise<void> | null = null;
 let authListenerUnsubscribe: (() => void) | null = null;
+let authEventQueue: Promise<void> = Promise.resolve();
 let authSessionEpoch = 0;
 let signInAttemptCounter = 0;
 let lastStartedSignInAttemptId: number | null = null;
 let timedOutSignInAttemptId: number | null = null;
 let isSigningOut = false;
-const USER_CACHE_KEY = 'wurmple_user_cache';
 const RECOVERY_PENDING_USER_KEY = 'wurmple_recovery_pending_user_id';
 const SIGNED_OUT_FLAG_KEY = 'wurmple_signed_out';
+// The per-user profile and balls caches are kept on sign-out (LRU, public display data only).
 const APP_STORAGE_KEYS_TO_CLEAR_ON_SIGNOUT = [
-  USER_CACHE_KEY,
   RECOVERY_PENDING_USER_KEY,
   'wurmple_avatar_pokemon_list',
   'tier_prompt_dismissed',
 ] as const;
 const APP_STORAGE_PREFIXES_TO_CLEAR_ON_SIGNOUT = [
-  'wurmple_balls_cache:',
   'pokemon_list_cache_',
   'pokemon_detail_cache_',
 ] as const;
@@ -183,8 +193,11 @@ function clearRecoveryUrlParams() {
   window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
 }
 
-function writeUserCache(userId: string, profile: Profile | null, stats: Stats | null) {
-  writeJsonCache<UserCachePayload>(USER_CACHE_KEY, { userId, profile, stats });
+function readCachedAvatar(userId: string): CachedAvatar | null {
+  const entry = readProfileCache(userId);
+  return entry?.avatarSrc && entry.avatarDataUrl
+    ? { src: entry.avatarSrc, dataUrl: entry.avatarDataUrl }
+    : null;
 }
 
 function clearAppStorageOnSignOut() {
@@ -220,8 +233,26 @@ function writeUserCacheFromState(
 ) {
   if (!state.session) return;
   if (expectedUserId && state.session.user.id !== expectedUserId) return;
-  writeUserCache(state.session.user.id, state.profile, state.stats);
+  writeProfileCache(state.session.user.id, state.profile, state.stats);
 }
+
+/** Synchronously builds the boot profile from the persisted session and the profile cache. */
+export function readBootProfile(): BootProfile | null {
+  migrateLegacyUserCache();
+  if (wasExplicitlySignedOut()) return null;
+  const userId = readPersistedSessionUserId();
+  if (!userId) return null;
+  const entry = readProfileCache(userId);
+  if (!entry?.profile) return null;
+  return {
+    userId,
+    profile: entry.profile,
+    stats: entry.stats ?? null,
+    avatar: readCachedAvatar(userId),
+  };
+}
+
+const initialBootProfile = readBootProfile();
 
 function getGuestAuthState(): Pick<
   AuthState,
@@ -235,6 +266,8 @@ function getGuestAuthState(): Pick<
   | 'isGuest'
   | 'pendingEmail'
   | 'pendingPasswordRecovery'
+  | 'bootProfile'
+  | 'cachedAvatar'
 > {
   return {
     user: null,
@@ -247,6 +280,8 @@ function getGuestAuthState(): Pick<
     isGuest: true,
     pendingEmail: null,
     pendingPasswordRecovery: false,
+    bootProfile: null,
+    cachedAvatar: null,
   };
 }
 
@@ -266,6 +301,8 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   isGuest: true,
   pendingPasswordRecovery: false,
   pendingEmail: null,
+  bootProfile: initialBootProfile,
+  cachedAvatar: initialBootProfile?.avatar ?? null,
 
   initialize: async () => {
     if (authInitInFlight) {
@@ -296,12 +333,14 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
           pendingPasswordRecovery: isRecoverySession || state.pendingPasswordRecovery,
           hasResolvedProfile: isRecoverySession,
           isProfileHydrating: !isRecoverySession,
+          bootProfile: null,
+          cachedAvatar: readCachedAvatar(session.user.id),
         }));
 
         try {
           // Apply cached profile/stats immediately for instant display
-          const cachedData = readJsonCache<UserCachePayload>(USER_CACHE_KEY);
-          if (cachedData?.userId === session.user.id) {
+          const cachedData = readProfileCache(session.user.id);
+          if (cachedData) {
             cachedProfile = cachedData.profile ?? null;
             cachedStats = cachedData.stats ?? null;
             if (authSessionEpoch === sessionEpoch) {
@@ -371,7 +410,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       try {
         authListenerUnsubscribe?.();
         authListenerUnsubscribe = null;
-        const authStateChangeResult = supabase.auth.onAuthStateChange(async (event, session) => {
+        const handleAuthEvent = async (event: AuthChangeEvent, session: Session | null) => {
           const shouldDiscardTimedOutSignIn = event === 'SIGNED_IN'
             && timedOutSignInAttemptId !== null
             && lastStartedSignInAttemptId === timedOutSignInAttemptId;
@@ -442,6 +481,16 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
             });
             await resetToFreshGuestGameState('Guest game init after auth session loss failed:');
           }
+        };
+        // supabase-js awaits this callback while holding its auth lock, so any supabase
+        // call made inside it (profile query, signOut, getSession) deadlocks the client.
+        // Run handlers after the callback returns, one at a time and in event order.
+        const authStateChangeResult = supabase.auth.onAuthStateChange((event, session) => {
+          setTimeout(() => {
+            authEventQueue = authEventQueue
+              .then(() => handleAuthEvent(event, session))
+              .catch(err => console.error('Auth state change handling failed:', err));
+          }, 0);
         });
         const subscription = (authStateChangeResult as { data?: { subscription?: { unsubscribe?: () => void } } } | undefined)?.data?.subscription;
         const unsubscribe = subscription?.unsubscribe;
@@ -462,17 +511,17 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
           clearSupabaseAuthStorage();
           useGameStore.getState().setStorageScope(null);
           authSessionEpoch += 1;
-          set({ isLoading: false, hasResolvedProfile: false, isProfileHydrating: false });
+          set({ isLoading: false, hasResolvedProfile: false, isProfileHydrating: false, bootProfile: null, cachedAvatar: null });
         } else if (session) {
           await applySession(session, forcePasswordRecovery);
         } else {
           useGameStore.getState().setStorageScope(null);
           authSessionEpoch += 1;
-          set({ isLoading: false, hasResolvedProfile: false, isProfileHydrating: false });
+          set({ isLoading: false, hasResolvedProfile: false, isProfileHydrating: false, bootProfile: null, cachedAvatar: null });
         }
       } catch (err) {
         console.error('Auth init failed:', err);
-        set({ isLoading: false, isProfileHydrating: false });
+        set({ isLoading: false, isProfileHydrating: false, bootProfile: null });
       } finally {
         authInitInFlight = null;
       }
@@ -592,6 +641,8 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       isGuest: true,
       pendingEmail: null,
       pendingPasswordRecovery: false,
+      bootProfile: null,
+      cachedAvatar: null,
     });
     setSignedOutFlag();
     clearAppStorageOnSignOut();
@@ -779,7 +830,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         // Write cache so profile/stats appear instantly on next load
         const { session: latestSession } = get();
         if (latestSession && latestSession.access_token === sessionToken) {
-          writeUserCache(latestSession.user.id, nextProfile, nextStats);
+          writeProfileCache(latestSession.user.id, nextProfile, nextStats);
         }
         return { error: null };
       } catch {
@@ -851,7 +902,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         },
       }));
       const { profile: updatedProfile, stats: updatedStats } = get();
-      writeUserCache(session.user.id, updatedProfile, updatedStats);
+      writeProfileCache(session.user.id, updatedProfile, updatedStats);
       return { error: null };
     } catch {
       if (get().displayBallSync.requestId !== requestId) {
@@ -957,8 +1008,15 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     clearRecoveryRequirement();
     set({ pendingPasswordRecovery: false });
   },
+
+  cacheAvatar: (src, dataUrl) => {
+    const userId = get().session?.user.id;
+    if (!userId) return;
+    writeCachedAvatar(userId, src, dataUrl);
+    set({ cachedAvatar: { src, dataUrl } });
+  },
 }));
 
 export { useAuthStore };
-export type { Profile, Stats };
+export type { Profile, Stats, BootProfile, CachedAvatar };
 export default useAuthStore;

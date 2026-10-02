@@ -31,6 +31,22 @@ function getSupabaseAuthStorageKeys(projectRef: string): string[] {
   ];
 }
 
+/** Synchronously reads the user id from supabase-js's persisted session, if any. */
+export function readPersistedSessionUserId(): string | null {
+  if (typeof window === 'undefined') return null;
+  const projectRef = getSupabaseProjectRefFromUrl(safeSupabaseUrl);
+  if (!projectRef) return null;
+  try {
+    const raw = localStorage.getItem(getSupabaseAuthStorageKeys(projectRef)[0]);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { user?: { id?: unknown } } | null;
+    const id = parsed?.user?.id;
+    return typeof id === 'string' && id ? id : null;
+  } catch {
+    return null;
+  }
+}
+
 export function clearSupabaseAuthStorage() {
   if (typeof window === 'undefined') return;
 
@@ -56,4 +72,4 @@ export function clearSupabaseAuthStorage() {
   }
 }
 
-export type { User, Session } from '@supabase/supabase-js';
+export type { AuthChangeEvent, User, Session } from '@supabase/supabase-js';

@@ -3,7 +3,9 @@ import { Archive, LogIn, LogOut } from 'lucide-react'
 import { useAuthStore, BALL_NAMES } from '../store/authStore'
 import { getAvatarUrl } from '../utils/avatarUtils'
 import DefaultAvatar from './DefaultAvatar'
+import useAvatarSrc from '../hooks/useAvatarSrc'
 import streakIcon from '../../streak.png'
+import { ballSpriteUrl } from '../lib/sprites'
 
 interface HeaderProps {
   onShowCollection?: () => void
@@ -13,19 +15,29 @@ interface HeaderProps {
   onSignOut?: () => void
 }
 
-const SPRITE_BASE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items'
-
 const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShowAuth, onGoHome, onSignOut }) => {
   const profile = useAuthStore(state => state.profile)
   const stats = useAuthStore(state => state.stats)
   const isGuest = useAuthStore(state => state.isGuest)
+  const isLoading = useAuthStore(state => state.isLoading)
+  const bootProfile = useAuthStore(state => state.bootProfile)
   const signOut = useAuthStore(state => state.signOut)
 
-  const displayBall = (!isGuest && profile?.display_ball) ? profile.display_ball : 'poke-ball'
-  const ballName = BALL_NAMES[displayBall] ?? 'Poké Ball'
-  const avatarUrl = (!isGuest && profile?.avatar_config) ? getAvatarUrl(profile.avatar_config) : null
+  // While auth resolves, paint the cached trainer instead of flashing the guest chip.
+  const boot = isGuest && isLoading ? bootProfile : null
+  const showAsUser = !isGuest || boot !== null
+  const viewProfile = boot ? boot.profile : (!isGuest ? profile : null)
+  const viewStats = boot ? boot.stats : stats
 
-  const handleSignOut = onSignOut ?? signOut
+  const displayBall = (showAsUser && viewProfile?.display_ball) ? viewProfile.display_ball : 'poke-ball'
+  const ballName = BALL_NAMES[displayBall] ?? 'Poké Ball'
+  const avatarUrl = viewProfile?.avatar_config ? getAvatarUrl(viewProfile.avatar_config) : null
+  const avatarSrc = useAvatarSrc(avatarUrl)
+
+  // Nav actions only work once the session has resolved.
+  const handleShowCollection = boot ? undefined : onShowCollection
+  const handleShowProfile = boot ? undefined : onShowProfile
+  const handleSignOut = boot ? undefined : (onSignOut ?? signOut)
 
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6 py-3 border-b border-gray-200 bg-white/90 backdrop-blur-sm rounded-t-lg mb-6">
@@ -48,38 +60,37 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
         {/* Ball badge pill */}
         <div className="flex items-center gap-1.5 bg-gray-100 border border-gray-200 rounded-full px-2.5 py-1">
           <img
-            src={`${SPRITE_BASE}/${displayBall}.png`}
+            src={ballSpriteUrl(displayBall)}
             alt={ballName}
             className="w-6 h-6 object-contain"
-            loading="lazy"
             decoding="async"
             width={24}
             height={24}
           />
-          {!isGuest && stats !== null && (
+          {showAsUser && viewStats !== null && (
             <span className="font-pixel text-sm text-gray-600 inline-flex items-center gap-1">
               <img
                 src={streakIcon}
                 alt="Streak"
                 className="w-4 h-4 object-contain"
-                loading="lazy"
                 decoding="async"
                 width={16}
                 height={16}
               />
-              {stats.current_streak}
+              {viewStats.current_streak}
             </span>
           )}
-          {isGuest && (
+          {!showAsUser && (
             <span className="font-pixel text-sm font-medium text-gray-600">Guest</span>
           )}
         </div>
 
         {/* Nav icons (auth users only) */}
-        {!isGuest && onShowCollection && (
+        {showAsUser && (onShowCollection || boot) && (
           <div className="relative group">
             <button
-              onClick={onShowCollection}
+              onClick={handleShowCollection}
+              aria-disabled={!handleShowCollection || undefined}
               className="p-1.5 text-gray-600 hover:text-pokemon-red transition-colors rounded-lg hover:bg-gray-100"
               aria-label="Collection"
             >
@@ -90,19 +101,19 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
             </span>
           </div>
         )}
-        {!isGuest && onShowProfile && (
+        {showAsUser && (onShowProfile || boot) && (
           <div className="relative group">
             <button
-              onClick={onShowProfile}
+              onClick={handleShowProfile}
+              aria-disabled={!handleShowProfile || undefined}
               className="p-0.5 transition-colors rounded-full hover:bg-gray-100"
               aria-label="Profile"
             >
-              {avatarUrl ? (
+              {avatarSrc ? (
                 <img
-                  src={avatarUrl}
+                  src={avatarSrc}
                   alt="Trainer avatar"
                   className="w-8 h-8 rounded-full object-cover border border-gray-200"
-                  loading="lazy"
                   decoding="async"
                   width={32}
                   height={32}
@@ -120,7 +131,7 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
         )}
 
         {/* Auth action */}
-        {isGuest ? (
+        {!showAsUser ? (
           <div className="relative group">
             <button
               onClick={onShowAuth}
@@ -135,6 +146,7 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
           <div className="relative group">
             <button
               onClick={handleSignOut}
+              aria-disabled={!handleSignOut || undefined}
               className="p-1.5 text-gray-500 hover:text-gray-700 transition-colors rounded-lg hover:bg-gray-100"
               aria-label="Sign Out"
             >

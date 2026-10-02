@@ -1,4 +1,5 @@
 import React from 'react'
+import { ballSpriteUrl } from '../lib/sprites'
 
 interface TierPromptToastProps {
   tierId: string
@@ -6,8 +7,6 @@ interface TierPromptToastProps {
   onSwitch: () => void
   onDismiss: () => void
 }
-
-const SPRITE_BASE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items'
 
 const TierPromptToast: React.FC<TierPromptToastProps> = ({ tierId, tierName, onSwitch, onDismiss }) => {
   return (
@@ -17,7 +16,7 @@ const TierPromptToast: React.FC<TierPromptToastProps> = ({ tierId, tierName, onS
         style={{ animation: 'fadeInScale 0.3s ease-out' }}
       >
         <img
-          src={`${SPRITE_BASE}/${tierId}.png`}
+          src={ballSpriteUrl(tierId)}
           alt={tierName}
           className="w-10 h-10 flex-shrink-0 object-contain"
         />

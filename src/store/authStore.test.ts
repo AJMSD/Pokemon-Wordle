@@ -88,7 +88,7 @@ describe('authStore display ball sync', () => {
     expect(state.displayBallSync.inFlight).toBe(false)
     expect(state.displayBallSync.pendingBallId).toBeNull()
 
-    const cached = JSON.parse(localStorage.getItem('wurmple_user_cache') ?? '{}')
+    const cached = JSON.parse(localStorage.getItem('wurmple_profile_cache:user-1') ?? '{}')
     expect(cached.profile?.display_ball).toBe('quick-ball')
   })
 
@@ -103,7 +103,7 @@ describe('authStore display ball sync', () => {
     expect(result.error).toBeNull()
     expect(useAuthStore.getState().profile?.tier_prompt_dismissed_forever).toBe(true)
 
-    const cached = JSON.parse(localStorage.getItem('wurmple_user_cache') ?? '{}')
+    const cached = JSON.parse(localStorage.getItem('wurmple_profile_cache:user-1') ?? '{}')
     expect(cached.profile?.tier_prompt_dismissed_forever).toBe(true)
   })
 })
@@ -212,6 +212,29 @@ describe('authStore stats hydration', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  it('returns from the auth callback without awaiting supabase calls (avoids auth lock deadlock)', async () => {
+    const authAny = supabase.auth as any
+    let authCallback: any = null
+    authAny.getSession = vi.fn().mockResolvedValue({ data: { session: null } })
+    authAny.onAuthStateChange = vi.fn((cb: any) => {
+      authCallback = cb
+      return { data: { subscription: { unsubscribe: vi.fn() } } }
+    })
+    const fromMock = vi.fn().mockReturnValue({
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: profile }) }) }),
+    })
+    ;(supabase as any).from = fromMock
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 200, ok: true, json: async () => ({ profile, stats: null }) }))
+
+    await useAuthStore.getState().initialize()
+    expect(authCallback('SIGNED_IN', session)).toBeUndefined()
+    expect(fromMock).not.toHaveBeenCalled()
+
+    await vi.waitFor(() => {
+      expect(useAuthStore.getState().profile?.username).toBe('Ash')
+    })
+  })
+
   it('dedupes concurrent fetchMe requests for the same session token', async () => {
     useAuthStore.setState({
       user: { id: 'user-1' } as any,
@@ -259,8 +282,7 @@ describe('authStore cache lifecycle', () => {
   })
 
   it('retains cached user cache when initialize runs without a session', async () => {
-    localStorage.setItem('wurmple_user_cache', JSON.stringify({
-      userId: 'stale-user',
+    localStorage.setItem('wurmple_profile_cache:stale-user', JSON.stringify({
       profile: { username: 'Stale' },
       stats: { current_streak: 99 },
     }))
@@ -273,7 +295,7 @@ describe('authStore cache lifecycle', () => {
 
     await useAuthStore.getState().initialize()
 
-    expect(localStorage.getItem('wurmple_user_cache')).not.toBeNull()
+    expect(localStorage.getItem('wurmple_profile_cache:stale-user')).not.toBeNull()
   })
 
   it('writes updated profile cache after avatar update', async () => {
@@ -305,18 +327,18 @@ describe('authStore cache lifecycle', () => {
     })
 
     expect(result.error).toBeNull()
-    const cached = JSON.parse(localStorage.getItem('wurmple_user_cache') ?? '{}')
-    expect(cached.userId).toBe('user-1')
+    const cached = JSON.parse(localStorage.getItem('wurmple_profile_cache:user-1') ?? '{}')
     expect(cached.profile?.avatar_config?.avatar_pokemon_id).toBe(25)
     expect(cached.profile?.avatar_config?.avatar_is_shiny).toBe(true)
   })
 
-  it('clears user cache on explicit sign-out', async () => {
-    localStorage.setItem('wurmple_user_cache', JSON.stringify({
-      userId: 'user-1',
+  it('keeps the per-user profile cache but clears session state on explicit sign-out', async () => {
+    localStorage.setItem('wurmple_profile_cache:user-1', JSON.stringify({
       profile: { username: 'Ash' },
       stats: { current_streak: 7 },
     }))
+    localStorage.setItem('wurmple_balls_cache:user-1', JSON.stringify({ balls: [] }))
+    localStorage.setItem('wurmple_recovery_pending_user_id', 'user-1')
 
     useAuthStore.setState({
       user: { id: 'user-1' } as any,
@@ -345,7 +367,11 @@ describe('authStore cache lifecycle', () => {
 
     await useAuthStore.getState().signOut()
 
-    expect(localStorage.getItem('wurmple_user_cache')).toBeNull()
+    expect(localStorage.getItem('wurmple_profile_cache:user-1')).not.toBeNull()
+    expect(localStorage.getItem('wurmple_balls_cache:user-1')).not.toBeNull()
+    expect(localStorage.getItem('wurmple_recovery_pending_user_id')).toBeNull()
+    expect(localStorage.getItem('wurmple_signed_out')).toBe('1')
+    expect(useAuthStore.getState().bootProfile).toBeNull()
     const gameState = useGameStore.getState()
     expect(gameState.guesses).toEqual([])
     expect(gameState.gameStatus).toBe('playing')

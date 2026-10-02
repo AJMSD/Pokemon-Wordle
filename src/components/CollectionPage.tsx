@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useAuthStore, BALL_NAMES } from '../store/authStore'
 import { isJsonEqual, readJsonCache, writeJsonCache } from '../lib/cache'
+import { ballSpriteUrl } from '../lib/sprites'
+import { BALLS_CACHE_PREFIX } from '../lib/profileCache'
 
 interface CollectionPageProps {
   onBack: () => void
@@ -20,9 +22,7 @@ interface BallsResponse {
   balls: BallEntry[]
 }
 
-const SPRITE_BASE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items'
 const STANDARD_ORDER = ['poke-ball', 'great-ball', 'ultra-ball', 'master-ball']
-const BALLS_CACHE_PREFIX = 'wurmple_balls_cache:'
 
 const GUEST_STANDARD: BallEntry[] = [
   { id: 'poke-ball',   display_name: BALL_NAMES['poke-ball'],   category: 'standard', status: 'current_tier', hint: null },
@@ -221,7 +221,7 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
                             <span className="text-gray-400 text-lg">?</span>
                           ) : (
                             <img
-                              src={`${SPRITE_BASE}/${ball.id}.png`}
+                              src={ballSpriteUrl(ball.id)}
                               alt={ball.display_name}
                               className={`w-8 h-8 object-contain ${isDisplay ? 'ball-active-glow' : ''}`}
                               loading="lazy"
@@ -282,7 +282,7 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
                   >
                     {isUnlocked ? (
                       <img
-                        src={`${SPRITE_BASE}/${ball.id}.png`}
+                        src={ballSpriteUrl(ball.id)}
                         alt={ball.display_name}
                         className={`w-12 h-12 object-contain ${isDisplay ? 'ball-active-glow' : ''}`}
                         loading="lazy"

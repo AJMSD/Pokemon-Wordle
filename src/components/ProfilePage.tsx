@@ -3,13 +3,13 @@ import { useAuthStore, BALL_NAMES } from '../store/authStore'
 import { getAvatarUrl } from '../utils/avatarUtils'
 import DefaultAvatar from './DefaultAvatar'
 import AvatarPicker from './AvatarPicker'
+import useAvatarSrc from '../hooks/useAvatarSrc'
+import { ballSpriteUrl } from '../lib/sprites'
 
 interface ProfilePageProps {
   onBack: () => void
   onTierUpgradeAvailable?: (tierId: string, tierName: string) => void
 }
-
-const SPRITE_BASE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items'
 
 const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
   const profile = useAuthStore(state => state.profile)
@@ -42,6 +42,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
   }, [isGuest, fetchMe])
 
   const avatarUrl = profile?.avatar_config ? getAvatarUrl(profile.avatar_config) : null
+  const avatarSrc = useAvatarSrc(avatarUrl)
   const displayBall = profile?.display_ball ?? 'poke-ball'
   const ballName = BALL_NAMES[displayBall] ?? displayBall
 
@@ -63,8 +64,8 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
       <div className="bg-white rounded-xl shadow p-6">
         {/* Avatar + username */}
         <div className="flex flex-col items-center gap-3 mb-6">
-          {avatarUrl ? (
-            <img src={avatarUrl} alt="avatar" className="w-24 h-24 rounded-xl border-2 border-gray-100 shadow-sm" loading="lazy" decoding="async" width={96} height={96} />
+          {avatarSrc ? (
+            <img src={avatarSrc} alt="avatar" className="w-24 h-24 rounded-xl border-2 border-gray-100 shadow-sm" decoding="async" width={96} height={96} />
           ) : (
             <DefaultAvatar size={96} />
           )}
@@ -72,10 +73,9 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
             <p className="text-xl font-bold text-gray-900">{profile?.username ?? '—'}</p>
             <div className="flex items-center justify-center gap-1 mt-1">
               <img
-                src={`${SPRITE_BASE}/${displayBall}.png`}
+                src={ballSpriteUrl(displayBall)}
                 alt={ballName}
                 className="w-4 h-4 object-contain"
-                loading="lazy"
                 decoding="async"
                 width={16}
                 height={16}

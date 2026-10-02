@@ -1,4 +1,5 @@
 import React from 'react'
+import { ballSpriteUrl } from '../lib/sprites'
 
 interface BallUnlockModalProps {
   ballName: string
@@ -6,8 +7,6 @@ interface BallUnlockModalProps {
   visible: boolean
   onClose: () => void
 }
-
-const SPRITE_BASE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items'
 
 const BallUnlockModal: React.FC<BallUnlockModalProps> = ({ ballName, ballId, visible, onClose }) => {
   if (!visible) return null
@@ -21,7 +20,7 @@ const BallUnlockModal: React.FC<BallUnlockModalProps> = ({ ballName, ballId, vis
         <div className="ball-burst-animate inline-block">
           <div className="unlock-ring-animate inline-block">
             <img
-              src={`${SPRITE_BASE}/${ballId}.png`}
+              src={ballSpriteUrl(ballId)}
               alt={ballName}
               className="w-16 h-16 object-contain"
               loading="lazy"

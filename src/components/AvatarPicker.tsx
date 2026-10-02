@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react'
 import { useAuthStore } from '../store/authStore'
+import { POKEMON_SPRITE_BASE } from '../lib/sprites'
 
 interface AvatarPickerProps {
   onClose: () => void
 }
 
-const SPRITE_BASE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon'
 const CACHE_KEY = 'wurmple_avatar_pokemon_list'
 
 interface PokemonEntry {
@@ -44,7 +44,7 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
     : pokemonMap
 
   const spriteUrl = (id: number) =>
-    isShiny ? `${SPRITE_BASE}/shiny/${id}.png` : `${SPRITE_BASE}/${id}.png`
+    isShiny ? `${POKEMON_SPRITE_BASE}/shiny/${id}.png` : `${POKEMON_SPRITE_BASE}/${id}.png`
 
   async function handleConfirm() {
     if (!selected) return
