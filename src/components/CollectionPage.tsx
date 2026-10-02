@@ -3,6 +3,7 @@ import { useAuthStore, BALL_NAMES } from '../store/authStore'
 import { isJsonEqual, readJsonCache, writeJsonCache } from '../lib/cache'
 import { ballSpriteUrl } from '../lib/sprites'
 import { BALLS_CACHE_PREFIX } from '../lib/profileCache'
+import { TIER_THRESHOLDS, getStreakTier, nextTier } from '../logic/tierLogic'
 
 interface CollectionPageProps {
   onBack: () => void
@@ -39,6 +40,19 @@ const GUEST_ACHIEVEMENT: BallEntry[] = [
   { id: 'heal-ball',   display_name: 'Heal Ball',   category: 'achievement', status: 'locked', hint: 'Win 3 times in a row after a loss' },
 ]
 
+function describeBall(ballId: string, entry: BallEntry | undefined): string {
+  if (entry?.hint) return entry.hint
+  const guestHint = GUEST_ACHIEVEMENT.find(b => b.id === ballId)?.hint
+  if (guestHint) return guestHint
+  const threshold = TIER_THRESHOLDS[ballId]
+  if (threshold === undefined) return 'A special ball from your collection.'
+  return threshold === 0 ? 'The starting streak tier.' : `Streak tier for a ${threshold}-win streak.`
+}
+
+const EquippedRibbon: React.FC = () => (
+  <span className="equipped-ribbon" aria-hidden="true">★ Equipped</span>
+)
+
 function isSelectable(ball: BallEntry): boolean {
   return ball.status === 'current_tier' || ball.status === 'past_tier' || ball.status === 'unlocked'
 }
@@ -58,6 +72,7 @@ function writeCachedBalls(userId: string, data: BallsResponse) {
 const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
   const session = useAuthStore(state => state.session)
   const profile = useAuthStore(state => state.profile)
+  const stats = useAuthStore(state => state.stats)
   const isGuest = useAuthStore(state => state.isGuest)
   const updateDisplayBall = useAuthStore(state => state.updateDisplayBall)
 
@@ -141,6 +156,16 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
 
   const currentDisplayBall = profile?.display_ball ?? 'poke-ball'
   const currentTierIdx = STANDARD_ORDER.indexOf(ballData?.current_streak_tier ?? 'poke-ball')
+  const equippedName = BALL_NAMES[currentDisplayBall] ?? currentDisplayBall
+  const equippedDescription = describeBall(currentDisplayBall, ballData?.balls.find(b => b.id === currentDisplayBall))
+
+  // Segmented progress from the current streak tier to the next one.
+  const streak = stats?.current_streak ?? 0
+  const upcomingTier = nextTier(streak)
+  const segmentStart = TIER_THRESHOLDS[getStreakTier(streak)]
+  const segmentCount = upcomingTier ? upcomingTier.threshold - segmentStart : 1
+  const segmentsFilled = upcomingTier ? streak - segmentStart : 1
+  const winsToNext = upcomingTier ? upcomingTier.threshold - streak : 0
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6">
@@ -159,11 +184,28 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
         </div>
       )}
 
-      {isGuest && (
+      {isGuest ? (
         <div className="mb-6 bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-xl p-4 text-center">
           <p className="text-sm font-bold text-gray-800 mb-0.5">Sign in to start earning balls</p>
           <p className="text-xs text-gray-500">Track your streak and unlock achievement balls</p>
         </div>
+      ) : (
+        <section aria-labelledby="equipped-heading" className="equipped-panel mb-8">
+          <img
+            src={ballSpriteUrl(currentDisplayBall)}
+            alt=""
+            className="sprite w-16 h-16 flex-shrink-0 ball-active-glow"
+            decoding="async"
+            width={64}
+            height={64}
+          />
+          <div className="min-w-0">
+            <h3 id="equipped-heading" className="text-xs text-gray-500 uppercase tracking-wide">Equipped</h3>
+            <p className="text-lg font-bold text-gray-900 leading-tight">{equippedName}</p>
+            <p className="text-xs text-gray-600 mt-1">{equippedDescription}</p>
+            <p className="text-xs text-gray-400 mt-1">Shown next to your name and streak.</p>
+          </div>
+        </section>
       )}
 
       {isInitialLoading ? (
@@ -194,37 +236,43 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
           <section className="mb-8">
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Streak Tier</h3>
             <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-              <div className="flex w-full items-center">
+              <div className="flex w-full items-start pt-7">
                 {standardBalls.map((ball, i) => {
                   const isPast = ball.status === 'past_tier'
                   const isCurrent = ball.status === 'current_tier'
                   const isFuture = ball.status === 'future_tier' || ball.status === 'locked'
                   const isSelected = selectedBall === ball.id
-                  const isDisplay = currentDisplayBall === ball.id
+                  const isDisplay = !isGuest && currentDisplayBall === ball.id
                   const canSelect = !isGuest && isSelectable(ball)
+                  const tierState = isCurrent ? ', your current tier' : isPast ? ', tier reached' : ', locked tier'
 
                   return (
                     <React.Fragment key={ball.id}>
-                      <div className="flex flex-col items-center gap-1 flex-shrink-0">
+                      <div className="relative flex flex-col items-center gap-1 flex-shrink-0 w-14">
+                        {isCurrent && (
+                          <span className="tier-marker">
+                            You are here
+                            <span className="tier-marker__arrow" aria-hidden="true" />
+                          </span>
+                        )}
+                        {isPast && <span className="tier-marker tier-marker--past" aria-hidden="true">✓</span>}
                         <button
                           disabled={!canSelect}
                           onClick={() => canSelect && setSelectedBall(isSelected ? null : ball.id)}
-                          className={`w-14 h-14 rounded-full border-4 flex items-center justify-center transition-all ${
-                            isCurrent
-                              ? 'border-pokemon-red bg-red-50 shadow-lg shadow-red-200 scale-110'
-                              : isPast
-                              ? 'border-green-400 bg-green-50'
-                              : 'border-gray-200 bg-gray-100 opacity-50'
-                          } ${isSelected ? 'ring-2 ring-offset-1 ring-pokemon-blue' : ''} ${canSelect ? 'cursor-pointer hover:scale-105' : 'cursor-default'}`}
+                          aria-label={`${ball.display_name}${tierState}${isDisplay ? ', equipped' : ''}`}
+                          aria-pressed={canSelect ? isSelected : undefined}
+                          aria-current={isDisplay ? 'true' : undefined}
+                          className={`tier-slot ${
+                            isCurrent ? 'tier-slot--current' : isPast ? 'tier-slot--past' : 'tier-slot--future'
+                          } ${isDisplay ? 'equipped-frame' : ''} ${isSelected ? 'tier-slot--selected' : ''} ${canSelect ? 'cursor-pointer' : 'cursor-default'}`}
                         >
                           {isFuture ? (
-                            <span className="text-gray-400 text-lg">?</span>
+                            <span className="text-gray-400 text-lg" aria-hidden="true">?</span>
                           ) : (
                             <img
                               src={ballSpriteUrl(ball.id)}
-                              alt={ball.display_name}
-                              className={`w-8 h-8 object-contain ${isDisplay ? 'ball-active-glow' : ''}`}
-                              loading="lazy"
+                              alt=""
+                              className="sprite w-8 h-8"
                               decoding="async"
                               width={32}
                               height={32}
@@ -235,88 +283,117 @@ const CollectionPage: React.FC<CollectionPageProps> = ({ onBack }) => {
                         <span className={`text-xs text-center leading-tight max-w-[56px] ${isFuture ? 'text-gray-400' : 'text-gray-700'}`}>
                           {ball.display_name}
                         </span>
-                        {isDisplay && !isFuture && (
-                          <span className="text-xs text-pokemon-red font-semibold">Active</span>
-                        )}
+                        {isDisplay && !isFuture && <EquippedRibbon />}
                         {isSelected && ball.id !== currentDisplayBall && (
                           <button
                             disabled={settingBall}
                             onClick={() => handleSetBall(ball.id)}
-                            className="text-xs bg-pokemon-red text-white px-2 py-0.5 rounded-full font-semibold hover:bg-red-700 transition-colors disabled:opacity-60"
+                            className="equip-btn"
                           >
-                            {settingBall ? '…' : 'Set'}
+                            {settingBall ? '…' : 'Equip'}
                           </button>
                         )}
                       </div>
                       {i < standardBalls.length - 1 && (
-                        <div className={`h-0.5 flex-1 min-w-4 ${i < currentTierIdx ? 'bg-green-400' : 'bg-gray-200'}`} />
+                        <div className={`tier-connector ${i < currentTierIdx ? 'tier-connector--done' : ''}`} />
                       )}
                     </React.Fragment>
                   )
                 })}
               </div>
-              <p className="text-xs text-gray-400 mt-3">Maintain your win streak to climb the tiers.</p>
+              {!isGuest && stats ? (
+                <div className="mt-4">
+                  <div
+                    className="pixel-progress"
+                    role="progressbar"
+                    aria-label={upcomingTier ? `Progress to ${BALL_NAMES[upcomingTier.tierId]}` : 'Max tier reached'}
+                    aria-valuemin={0}
+                    aria-valuemax={segmentCount}
+                    aria-valuenow={segmentsFilled}
+                  >
+                    {Array.from({ length: segmentCount }, (_, i) => (
+                      <span key={i} className={`pixel-progress__seg ${i < segmentsFilled ? 'pixel-progress__seg--filled' : ''}`} />
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-600 mt-2">
+                    {upcomingTier
+                      ? `${winsToNext} more ${winsToNext === 1 ? 'win' : 'wins'} to ${BALL_NAMES[upcomingTier.tierId]}`
+                      : 'Max tier'}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 mt-3">Maintain your win streak to climb the tiers.</p>
+              )}
             </div>
           </section>
 
           {/* Achievement balls */}
           <section>
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Achievement Balls</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2">
               {achievementBalls.map(ball => {
                 const isUnlocked = ball.status === 'unlocked'
                 const isSelected = selectedBall === ball.id
-                const isDisplay = currentDisplayBall === ball.id
+                const isDisplay = !isGuest && currentDisplayBall === ball.id
                 const canSelect = !isGuest && isUnlocked
 
                 return (
-                  <button
+                  <div
                     key={ball.id}
-                    disabled={!canSelect}
-                    onClick={() => canSelect && setSelectedBall(isSelected ? null : ball.id)}
-                    className={`border-2 rounded-xl p-4 flex flex-col items-center gap-2 transition-all text-left ${
+                    aria-current={isDisplay ? 'true' : undefined}
+                    className={`relative border-2 rounded-xl flex flex-col items-center transition-colors ${
                       isUnlocked
-                        ? 'border-gray-200 bg-white hover:border-pokemon-blue cursor-pointer'
-                        : 'border-gray-200 bg-gray-50 opacity-75 cursor-default'
-                    } ${isSelected ? 'border-pokemon-blue ring-1 ring-pokemon-blue' : ''}`}
+                        ? 'border-gray-200 bg-white hover:border-pokemon-blue'
+                        : 'border-gray-200 bg-gray-50 opacity-75'
+                    } ${isSelected ? 'border-pokemon-blue ring-1 ring-pokemon-blue' : ''} ${isDisplay ? 'equipped-frame' : ''}`}
                   >
-                    {isUnlocked ? (
-                      <img
-                        src={ballSpriteUrl(ball.id)}
-                        alt={ball.display_name}
-                        className={`w-12 h-12 object-contain ${isDisplay ? 'ball-active-glow' : ''}`}
-                        loading="lazy"
-                        decoding="async"
-                        width={48}
-                        height={48}
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-                      />
-                    ) : (
-                      <div className="w-12 h-12 rounded-full bg-gray-300 border-2 border-gray-400 flex items-center justify-center">
-                        <span className="text-gray-500 text-lg">?</span>
+                    {isDisplay && (
+                      <span className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap z-10"><EquippedRibbon /></span>
+                    )}
+                    <button
+                      type="button"
+                      disabled={!canSelect}
+                      onClick={() => canSelect && setSelectedBall(isSelected ? null : ball.id)}
+                      aria-label={`${ball.display_name}${isUnlocked ? '' : ', locked'}${isDisplay ? ', equipped' : ''}`}
+                      aria-pressed={canSelect ? isSelected : undefined}
+                      className={`w-full p-4 flex flex-col items-center gap-2 ${canSelect ? 'cursor-pointer' : 'cursor-default'}`}
+                    >
+                      {isUnlocked ? (
+                        <img
+                          src={ballSpriteUrl(ball.id)}
+                          alt=""
+                          className="sprite w-12 h-12"
+                          decoding="async"
+                          width={48}
+                          height={48}
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-gray-300 border-2 border-gray-400 flex items-center justify-center">
+                          <span className="text-gray-500 text-lg" aria-hidden="true">?</span>
+                        </div>
+                      )}
+                      <span className={`text-sm font-semibold text-center ${isUnlocked ? 'text-gray-800' : 'text-gray-400'}`}>
+                        {ball.display_name}
+                      </span>
+                      {ball.hint && (
+                        <p className={`text-xs text-center leading-snug ${isUnlocked ? 'text-gray-500' : 'text-gray-400'}`}>
+                          {ball.hint}
+                        </p>
+                      )}
+                    </button>
+                    {isSelected && ball.id !== currentDisplayBall && (
+                      <div className="w-full px-4 pb-4">
+                        <button
+                          disabled={settingBall}
+                          onClick={() => handleSetBall(ball.id)}
+                          className="equip-btn w-full"
+                        >
+                          {settingBall ? '…' : 'Equip'}
+                        </button>
                       </div>
                     )}
-                    <span className={`text-sm font-semibold text-center ${isUnlocked ? 'text-gray-800' : 'text-gray-400'}`}>
-                      {ball.display_name}
-                    </span>
-                    {isDisplay && (
-                      <span className="text-xs text-pokemon-red font-semibold">Active</span>
-                    )}
-                    {isSelected && ball.id !== currentDisplayBall && (
-                      <button
-                        disabled={settingBall}
-                        onClick={e => { e.stopPropagation(); handleSetBall(ball.id) }}
-                        className="text-xs bg-pokemon-red text-white px-3 py-0.5 rounded-full font-semibold hover:bg-red-700 transition-colors disabled:opacity-60 w-full text-center"
-                      >
-                        {settingBall ? '…' : 'Set as display badge'}
-                      </button>
-                    )}
-                    {ball.hint && (
-                      <p className={`text-xs text-center leading-snug ${isUnlocked ? 'text-gray-500' : 'text-gray-400'}`}>
-                        {ball.hint}
-                      </p>
-                    )}
-                  </button>
+                  </div>
                 )
               })}
             </div>

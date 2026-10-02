@@ -9,14 +9,8 @@ import ToastContainer from './components/ToastContainer'
 import OfflineBanner from './components/OfflineBanner'
 import useToast from './hooks/useToast'
 import { ToastProps } from './components/Toast'
+import { getTierUpgradePrompt } from './logic/tierLogic'
 
-const TIER_ORDER = ['poke-ball', 'great-ball', 'ultra-ball', 'master-ball']
-function getStreakTier(streak: number): string {
-  if (streak >= 14) return 'master-ball'
-  if (streak >= 7) return 'ultra-ball'
-  if (streak >= 3) return 'great-ball'
-  return 'poke-ball'
-}
 
 const CollectionPage = lazy(() => import('./components/CollectionPage'))
 const ProfilePage = lazy(() => import('./components/ProfilePage'))
@@ -161,10 +155,13 @@ function App() {
 
   useEffect(() => {
     if (isGuest || !stats || !profile) return
-    if (profile.tier_prompt_dismissed_forever) return
-    const currentTier = getStreakTier(stats.current_streak)
-    if (TIER_ORDER.indexOf(currentTier) > TIER_ORDER.indexOf(profile.display_ball ?? 'poke-ball')) {
-      setTierUpgrade({ tierId: currentTier, tierName: BALL_NAMES[currentTier] })
+    const upgradeTier = getTierUpgradePrompt(
+      stats.current_streak,
+      profile.display_ball,
+      Boolean(profile.tier_prompt_dismissed_forever),
+    )
+    if (upgradeTier) {
+      setTierUpgrade({ tierId: upgradeTier, tierName: BALL_NAMES[upgradeTier] })
     }
   }, [stats, profile, isGuest])
 

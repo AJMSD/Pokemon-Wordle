@@ -58,10 +58,13 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
       {/* Right: ball badge + nav + auth */}
       <div className="flex items-center gap-2 sm:gap-3">
         {/* Ball badge pill */}
-        <div className="flex items-center gap-1.5 bg-gray-100 border border-gray-200 rounded-full px-2.5 py-1">
+        <div
+          className="flex items-center gap-1.5 bg-gray-100 border border-gray-200 rounded-full px-2.5 py-1"
+          title={showAsUser ? `Equipped: ${ballName}` : undefined}
+        >
           <img
             src={ballSpriteUrl(displayBall)}
-            alt={ballName}
+            alt={showAsUser ? `Equipped: ${ballName}` : ballName}
             className="w-6 h-6 object-contain"
             decoding="async"
             width={24}
