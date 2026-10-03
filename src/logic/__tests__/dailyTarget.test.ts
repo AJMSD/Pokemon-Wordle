@@ -3,6 +3,7 @@ import {
   POKEMON_COUNT,
   PER_USER_START_DATE,
   dayNumber,
+  affinePick,
   getDailyPokemonId,
   legacySharedIndex,
   generationForId,
@@ -66,6 +67,29 @@ describe('getDailyPokemonId from the per-user start', () => {
         seen.add(id)
       }
       expect(seen.size).toBe(POKEMON_COUNT)
+    }
+  })
+})
+
+describe('affinePick', () => {
+  it('is a permutation of the dex over 1025 days for arbitrary seeds', () => {
+    const seen = new Set<number>()
+    for (let i = 0; i < POKEMON_COUNT; i++) {
+      seen.add(affinePick(addDays(PER_USER_START_DATE, i), 4000000000, 123456789))
+    }
+    expect(seen.size).toBe(POKEMON_COUNT)
+  })
+
+  it('differs with different seeds and is deterministic', () => {
+    expect(affinePick('2026-10-05', 1, 2)).not.toBe(affinePick('2026-10-05', 1, 3))
+    expect(affinePick('2026-10-05', 1, 2)).toBe(affinePick('2026-10-05', 1, 2))
+  })
+
+  it('always returns a valid dex id, even for multiples of 5 or 41', () => {
+    for (const a of [0, 5, 41, 205, 1025, 2050]) {
+      const id = affinePick('2026-12-25', a, 7)
+      expect(id).toBeGreaterThanOrEqual(1)
+      expect(id).toBeLessThanOrEqual(POKEMON_COUNT)
     }
   })
 })
