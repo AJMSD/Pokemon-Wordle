@@ -12,7 +12,7 @@ export default defineConfig({
     },
   },
   build: {
-    // Vite 8 bundles with Rolldown: manualChunks must be a function.
+    // Vite 6 (the server builds on Node 18; Vite 7+ needs Node 20.19+).
     rollupOptions: {
       output: {
         manualChunks(id: string) {
