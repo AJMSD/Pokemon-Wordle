@@ -7,7 +7,7 @@ export const POKEMON_COUNT = 1025;
 
 // First JST day on which each user gets their own Pokémon. Earlier days keep
 // the single shared pick so games already in progress don't change target.
-export const PER_USER_START_DATE = '2026-10-04';
+export const PER_USER_START_DATE = '2026-10-05';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

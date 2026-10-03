@@ -22,7 +22,7 @@ describe('dayNumber', () => {
 
 describe('getDailyPokemonId before the per-user start', () => {
   // Outputs of the original arg-less getDailyPokemonIndex() for these JST days.
-  const LEGACY = { '2026-04-25': 706, '2026-10-02': 94, '2026-10-03': 611 }
+  const LEGACY = { '2026-04-25': 706, '2026-10-02': 94, '2026-10-03': 611, '2026-10-04': 865 }
 
   it('keeps the legacy shared index bit-for-bit', () => {
     for (const [date, index] of Object.entries(LEGACY)) {
@@ -40,8 +40,6 @@ describe('getDailyPokemonId before the per-user start', () => {
 
 describe('getDailyPokemonId from the per-user start', () => {
   it('matches golden vectors so the mapping cannot drift silently', () => {
-    expect(getDailyPokemonId('2026-10-04', 'user-a')).toBe(268)
-    expect(getDailyPokemonId('2026-10-04', 'user-b')).toBe(814)
     expect(getDailyPokemonId('2026-10-05', 'user-a')).toBe(677)
     expect(getDailyPokemonId('2027-01-01', '3f1c2a9e-0000-4000-8000-000000000001')).toBe(456)
   })
