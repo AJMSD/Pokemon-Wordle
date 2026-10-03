@@ -1,6 +1,11 @@
 -- Phase 4: Ball Progression System
 
 -- Replace wrong achievement balls
+-- Dependents first: ball_unlocks.ball_id references ball_catalog(id) with no cascade.
+UPDATE public.profiles SET display_ball = 'poke-ball'
+  WHERE display_ball IN (SELECT id FROM public.ball_catalog WHERE category = 'achievement');
+DELETE FROM public.ball_unlocks
+  WHERE ball_id IN (SELECT id FROM public.ball_catalog WHERE category = 'achievement');
 DELETE FROM public.ball_catalog WHERE category = 'achievement';
 
 INSERT INTO public.ball_catalog (id, display_name, description, category, unlock_condition) VALUES
