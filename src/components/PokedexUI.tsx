@@ -12,7 +12,8 @@ const PokedexUI: React.FC = () => {
   const [currentGuess, setCurrentGuess] = useState('')
   const {
     makeGuess, submitGuessToServer, error, resetError,
-    dailyPokemon, gameStatus, checkForNewDay, guesses,
+    dailyPokemon, gameStatus, checkForNewDay, guessResults, nameLength,
+    initializeServerSession,
     staleLock, rateLimitUntil, rejectedGuess,
     clearStaleLock, clearRejectedGuess, clearRateLimitLock,
   } = useGameStore()
@@ -34,8 +35,8 @@ const PokedexUI: React.FC = () => {
   
   // Easter egg: the small lights glow as more of the name's letters are found.
   const filledDots = useMemo(
-    () => filledDotCount(guesses, dailyPokemon?.name ?? '', gameStatus === 'won'),
-    [guesses, dailyPokemon?.name, gameStatus]
+    () => filledDotCount(guessResults, nameLength, gameStatus === 'won'),
+    [guessResults, nameLength, gameStatus]
   )
 
   // Get matching suggestions based on current input - use useMemo to prevent recreation
@@ -98,13 +99,24 @@ const PokedexUI: React.FC = () => {
       showError(error)
       resetError()
     }
-    
+  }, [error, resetError, showError])
+
+  // Toast once per confirmed finish (playing -> won/lost), never for a guess
+  // the server hasn't accepted yet and not again when the answer arrives.
+  const prevStatusRef = useRef(gameStatus)
+  const announcedRef = useRef(false)
+  useEffect(() => {
+    const prev = prevStatusRef.current
+    prevStatusRef.current = gameStatus
+    if (gameStatus === 'playing') { announcedRef.current = false; return }
+    if (prev !== 'playing' || announcedRef.current) return
+    announcedRef.current = true
     if (gameStatus === 'won') {
       addToast("You caught it! Today's win is logged.", 'success')
-    } else if (gameStatus === 'lost') {
-      addToast(`Game over! Today's Pokémon was ${dailyPokemon?.name}.`, 'error')
+    } else {
+      addToast(`Game over! Today's Pokémon was ${dailyPokemon?.name ?? 'a mystery'}.`, 'error')
     }
-  }, [error, resetError, showError, gameStatus, addToast, dailyPokemon?.name])
+  }, [gameStatus, addToast, dailyPokemon?.name])
 
   // Update refs array when suggestions change
   useEffect(() => {
@@ -289,7 +301,11 @@ const PokedexUI: React.FC = () => {
               <span>⚠️ That game state changed elsewhere. Refresh to continue.</span>
               <button
                 className="underline text-orange-700 ml-2"
-                onClick={() => clearStaleLock()}
+                onClick={() => {
+                  clearStaleLock()
+                  // Reload the server's view so the next guess carries the right version.
+                  if (session?.access_token) void initializeServerSession(session.access_token)
+                }}
               >
                 Dismiss
               </button>
@@ -354,7 +370,7 @@ const PokedexUI: React.FC = () => {
             <div className={`game-over-banner ${gameStatus === 'won' ? 'win-animate' : ''}`}>
               {gameStatus === 'won'
                 ? '🏆 You caught it! Come back tomorrow.'
-                : `😔 Today's Pokémon was ${dailyPokemon?.name}. Try again tomorrow!`}
+                : `😔 Today's Pokémon was ${dailyPokemon?.name ?? 'a mystery'}. Try again tomorrow!`}
             </div>
           )}
         </div>

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useGameStore } from '../store/gameStore'
 
 const HintPanel: React.FC = () => {
-  const { hints, dailyPokemon, guesses } = useGameStore()
+  const { hints, guesses } = useGameStore()
   const [newlyRevealed, setNewlyRevealed] = useState<number[]>([])
   
   // Track newly revealed hints to add visual feedback
@@ -49,7 +49,7 @@ const HintPanel: React.FC = () => {
         {/* Ability hint */}
         <HintItem 
           label="Ability" 
-          value={dailyPokemon?.abilities?.[0]?.ability?.name || "Static"}
+          value={typeof hints[0].value === 'string' && hints[0].value ? hints[0].value : "Unknown"}
           revealed={hints[0].revealed}
           unlocksAt={3}
           currentGuesses={guesses.length}
@@ -59,7 +59,7 @@ const HintPanel: React.FC = () => {
         {/* Generation hint */}
         <HintItem 
           label="Generation" 
-          value={typeof hints[1].value === 'string' ? hints[1].value : "Generation I"}
+          value={typeof hints[1].value === 'string' ? hints[1].value : "Unknown"}
           revealed={hints[1].revealed}
           unlocksAt={6}
           currentGuesses={guesses.length}
@@ -69,7 +69,7 @@ const HintPanel: React.FC = () => {
         {/* Type hint */}
         <HintItem 
           label="Type(s)" 
-          value={Array.isArray(hints[2].value) ? hints[2].value.join(", ") : "Electric"}
+          value={Array.isArray(hints[2].value) ? hints[2].value.join(", ") : "Unknown"}
           revealed={hints[2].revealed}
           unlocksAt={9}
           currentGuesses={guesses.length}

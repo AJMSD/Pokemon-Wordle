@@ -8,6 +8,7 @@ export const useGame = () => {
     dailyPokemon,
     pokemonList,
     guesses,
+    nameLength,
     hints,
     gameStatus,
     isLoading,
@@ -27,7 +28,7 @@ export const useGame = () => {
   // Calculate game metrics
   const currentAttempt = guesses.length;
   const remainingAttempts = 10 - currentAttempt;
-  const pokemonNameLength = dailyPokemon ? normalizePokemonName(dailyPokemon.name).length : 0;
+  const pokemonNameLength = nameLength ?? 0;
 
   // Generate autocomplete suggestions for the input field
   const getSuggestions = useCallback((input: string) => {
