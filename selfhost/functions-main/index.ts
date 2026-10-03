@@ -373,7 +373,7 @@ Deno.serve(async (req: Request) => {
   const envVarsObj: Record<string, string> = {}
   for (const name of WORKER_ENV_ALLOWLIST) {
     const value = Deno.env.get(name)
-    if (value !== undefined) envVarsObj[name] = value
+    if (value) envVarsObj[name] = value // skip unset and empty (empty TARGET_SALT must not shadow JWT_SECRET)
   }
   envVarsObj.SUPABASE_FUNCTION_SLUG = service_name
   const envVars = Object.keys(envVarsObj).map((k) => [k, envVarsObj[k]])
