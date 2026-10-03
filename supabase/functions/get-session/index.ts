@@ -1,24 +1,20 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { handleCors, jsonResponder } from '../_shared/cors.ts';
 import { checkRateLimit } from '../_shared/rateLimit.ts';
 import { markMissedSessions } from '../_shared/missedDay.ts';
 import { getAuthUser, jwtSubject } from '../_shared/auth.ts';
 import { ensureSessionTarget, resolveTarget, revealedHints, targetColumns } from '../_shared/target.ts';
+import { buildSessionResponse } from '../_shared/sessionResponse.ts';
+import { awardBalls, recordCompletion } from '../_shared/completion.ts';
 
 function getClientIP(req: Request): string {
   return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
 }
 
-function json(body: unknown, status: number, extraHeaders: Record<string, string> = {}): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json', ...extraHeaders },
-  });
-}
-
 Deno.serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
+  const json = jsonResponder(req);
 
   if (req.method !== 'GET') {
     return json({ error: 'Method not allowed' }, 405);
@@ -34,7 +30,6 @@ Deno.serve(async (req: Request) => {
   try {
     const url = new URL(req.url);
     const puzzle_date_key = url.searchParams.get('puzzle_date_key');
-    const guest_id = url.searchParams.get('guest_id');
 
     if (!puzzle_date_key) {
       return json({ error: 'Missing puzzle_date_key' }, 400);
@@ -47,31 +42,27 @@ Deno.serve(async (req: Request) => {
     }
 
     // The token's subject lets the session load start alongside getUser().
+    // Guests play entirely on the client; the server only serves signed-in users.
     const authHeader = req.headers.get('Authorization');
     const userId = jwtSubject(authHeader);
-    const isGuest = !userId;
-    if (isGuest && !guest_id) {
-      return json({ error: 'guest_id required for unauthenticated requests' }, 400);
+    if (!userId) {
+      return json({ error: 'Authorization required' }, 401);
     }
 
-    const sessionFilter = isGuest ? { guest_id } : { user_id: userId };
-
     // Rate limit: 30 req/min
-    const rateLimitKey = userId
-      ? `get-session:user:${userId}`
-      : `get-session:ip:${getClientIP(req)}`;
+    const rateLimitKey = `get-session:user:${userId}`;
 
     const [user, rateLimit, sessionResult] = await Promise.all([
-      userId ? getAuthUser(authHeader) : Promise.resolve(null),
+      getAuthUser(authHeader),
       checkRateLimit(supabaseAdmin, rateLimitKey, 30, 60),
       supabaseAdmin
         .from('daily_sessions')
         .select('*')
-        .match({ ...sessionFilter, puzzle_date_key })
+        .match({ user_id: userId, puzzle_date_key })
         .maybeSingle(),
     ]);
 
-    if (userId && user?.id !== userId) {
+    if (user?.id !== userId) {
       return json({ error: 'Invalid or expired token' }, 401);
     }
     const isVerified = !!user?.email_confirmed_at;
@@ -87,15 +78,15 @@ Deno.serve(async (req: Request) => {
     let session = sessionResult.data;
     const [, target] = await Promise.all([
       // Mark any stale sessions as missed
-      markMissedSessions(supabaseAdmin, userId, isGuest ? guest_id : null, puzzle_date_key, isVerified),
-      resolveTarget(supabaseAdmin, puzzle_date_key, userId ?? guest_id!, session),
+      markMissedSessions(supabaseAdmin, userId, null, puzzle_date_key, isVerified),
+      resolveTarget(supabaseAdmin, puzzle_date_key, userId, session),
     ]);
 
     if (!session) {
       const { data: newSession } = await supabaseAdmin
         .from('daily_sessions')
         .insert({
-          ...sessionFilter,
+          user_id: userId,
           puzzle_date_key,
           ...targetColumns(target),
           guesses: [],
@@ -111,27 +102,43 @@ Deno.serve(async (req: Request) => {
         ({ data: session } = await supabaseAdmin
           .from('daily_sessions')
           .select('*')
-          .match({ ...sessionFilter, puzzle_date_key })
+          .match({ user_id: userId, puzzle_date_key })
           .single());
       }
     } else {
       await ensureSessionTarget(supabaseAdmin, session, target);
     }
 
-    const responseBody: Record<string, unknown> = {
-      guesses: session.guesses,
-      hint_flags: session.hint_flags,
-      hints: revealedHints(session.hint_flags, target.data),
-      completion_state: session.completion_state,
-      version: session.version,
-      puzzle_metadata: {
-        name_length: target.name.replace(/[^a-z]/gi, '').length,
-      },
-    };
-
-    if (session.completion_state !== 'playing') {
-      responseBody.pokemon_name = target.name;
+    // Repair: a finished game by a verified user whose result/stats write failed
+    // earlier. Only sessions the user actually played (guesses present) qualify;
+    // recordCompletion is idempotent, so concurrent repairs credit once.
+    if (
+      isVerified &&
+      (session.completion_state === 'won' || session.completion_state === 'lost') &&
+      Array.isArray(session.guesses) && session.guesses.length > 0
+    ) {
+      const { data: result } = await supabaseAdmin
+        .from('daily_results')
+        .select('user_id')
+        .match({ user_id: userId, puzzle_date_key })
+        .maybeSingle();
+      if (!result) {
+        try {
+          const balls = await recordCompletion(supabaseAdmin, {
+            userId,
+            puzzleDateKey: puzzle_date_key,
+            targetName: target.name,
+            guesses: session.guesses,
+            state: session.completion_state,
+          });
+          await awardBalls(supabaseAdmin, userId, [...new Set(balls)]);
+        } catch (err) {
+          console.error(JSON.stringify({ fn: 'get-session', event: 'repair_failed', error: String(err) }));
+        }
+      }
     }
+
+    const responseBody = buildSessionResponse(session, target, revealedHints(session.hint_flags, target.data));
 
     console.log(JSON.stringify({ fn: 'get-session', method: req.method, user_id: userId, status: 200, duration_ms: Date.now() - start }));
 

@@ -1,8 +1,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { corsHeadersFor, handleCors } from '../_shared/cors.ts';
 import { checkRateLimit } from '../_shared/rateLimit.ts';
 
 Deno.serve(async (req: Request) => {
+  const corsHeaders = corsHeadersFor(req);
   const cors = handleCors(req);
   if (cors) return cors;
 
@@ -72,6 +73,17 @@ Deno.serve(async (req: Request) => {
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
+    }
+
+    if (
+      avatar_form_id !== undefined &&
+      avatar_form_id !== null &&
+      !(typeof avatar_form_id === 'number' && Number.isInteger(avatar_form_id) && avatar_form_id >= 1 && avatar_form_id <= 10277)
+    ) {
+      return new Response(
+        JSON.stringify({ error: 'avatar_form_id must be an integer between 1 and 10277, or null' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     if (avatar_is_shiny !== undefined && typeof avatar_is_shiny !== 'boolean') {

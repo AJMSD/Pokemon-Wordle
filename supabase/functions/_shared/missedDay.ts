@@ -1,4 +1,5 @@
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { missedStatsUpdate } from './missedStats.ts';
 
 export async function markMissedSessions(
   supabaseAdmin: SupabaseClient,
@@ -11,7 +12,7 @@ export async function markMissedSessions(
 
   const { data: staleSessions } = await supabaseAdmin
     .from('daily_sessions')
-    .select('id, puzzle_date_key, version')
+    .select('id, puzzle_date_key, version, guesses')
     .match({ ...filter, completion_state: 'playing' })
     .lt('puzzle_date_key', todayKey);
 
@@ -28,18 +29,9 @@ export async function markMissedSessions(
     .eq('completion_state', 'playing');
 
   if (userId && isVerified) {
-    const latestMissed = staleSessions
-      .map((s) => s.puzzle_date_key)
-      .sort()
-      .at(-1)!;
-
     await supabaseAdmin
       .from('user_stats')
-      .update({
-        current_streak: 0,
-        participation_streak: 0,
-        last_played_date: latestMissed,
-      })
+      .update(missedStatsUpdate(staleSessions))
       .eq('user_id', userId);
   }
 }
