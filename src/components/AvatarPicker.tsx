@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useAuthStore } from '../store/authStore'
 import { POKEMON_SPRITE_BASE } from '../lib/sprites'
 import DefaultAvatar from './DefaultAvatar'
+import { normalizePokemonName } from '../utils/pokemonUtils'
 
 interface AvatarPickerProps {
   onClose: () => void
@@ -29,12 +30,17 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
   useEffect(() => {
     const cached = localStorage.getItem(CACHE_KEY)
     if (cached) {
-      try { setPokemonMap(JSON.parse(cached)); return } catch { /* fall through to fetch */ }
+      try {
+        // Older caches hold raw PokéAPI names like 'lycanroc-midday'.
+        const list: PokemonEntry[] = JSON.parse(cached)
+        setPokemonMap(list.map(p => ({ ...p, name: normalizePokemonName(p.name) })))
+        return
+      } catch { /* fall through to fetch */ }
     }
     fetch('https://pokeapi.co/api/v2/pokemon?limit=1025')
       .then(r => r.json())
       .then(data => {
-        const list: PokemonEntry[] = data.results.map((p: { name: string }, i: number) => ({ id: i + 1, name: p.name }))
+        const list: PokemonEntry[] = data.results.map((p: { name: string }, i: number) => ({ id: i + 1, name: normalizePokemonName(p.name) }))
         setPokemonMap(list)
         try { localStorage.setItem(CACHE_KEY, JSON.stringify(list)) } catch { /* ignore quota */ }
       })
@@ -62,7 +68,7 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-white pixel-frame w-full max-w-sm p-4 sm:p-6 max-h-[calc(100dvh-2rem)] overflow-y-auto no-scrollbar" role="dialog" aria-modal="true" aria-labelledby="avatar-picker-title">
+      <div className="bg-white pixel-frame w-full max-w-sm sm:max-w-xl md:max-w-2xl p-4 sm:p-6 max-h-[calc(100dvh-2rem)] overflow-y-auto no-scrollbar" role="dialog" aria-modal="true" aria-labelledby="avatar-picker-title">
         <h2 id="avatar-picker-title" className="text-xl font-bold text-center text-gray-900 mb-4">Choose your trainer</h2>
 
         <div className="flex items-center gap-3 mb-3">
@@ -85,7 +91,7 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
           </label>
         </div>
 
-        <div className="grid grid-cols-5 gap-2 mb-4 sm:mb-6 max-h-[min(16rem,40dvh)] overflow-y-auto no-scrollbar">
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-4 sm:mb-6 max-h-[min(16rem,40dvh)] sm:max-h-[min(26rem,55dvh)] overflow-y-auto no-scrollbar">
           {showRed && (
             <button
               onClick={() => setSelected('red')}
@@ -100,11 +106,11 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
               <span className="w-full aspect-square inline-flex [&>svg]:w-full [&>svg]:h-full">
                 <DefaultAvatar size={64} />
               </span>
-              <span className="text-[9px] text-gray-500 truncate w-full text-center leading-tight mt-0.5">red</span>
+              <span className="text-[9px] text-gray-500 w-full text-center leading-tight mt-0.5 break-all">red</span>
             </button>
           )}
           {filtered.length === 0 && !showRed ? (
-            <p className="col-span-5 text-center text-sm text-gray-400 py-4">No Pokémon found</p>
+            <p className="col-span-full text-center text-sm text-gray-400 py-4">No Pokémon found</p>
           ) : filtered.map(p => (
             <button
               key={p.id}
@@ -123,7 +129,7 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
                 className="sprite w-full h-auto"
                 loading="lazy"
               />
-              <span className="text-[9px] text-gray-500 truncate w-full text-center leading-tight mt-0.5">{p.name}</span>
+              <span className="text-[9px] text-gray-500 w-full text-center leading-tight mt-0.5 break-all">{p.name}</span>
             </button>
           ))}
         </div>
