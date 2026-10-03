@@ -63,7 +63,7 @@ services:
       # Shared game logic and the Pokémon name list (imported as ../src/*).
       - ../src:/app/src:ro
       - ../db:/app/db:ro
-      - deno-cache:/deno-dir
+      - api-deno-cache:/deno-dir
     environment:
       PGHOST: postgres
       PGUSER: postgres
@@ -124,4 +124,4 @@ services:
 
 volumes:
   pgdata:
-  deno-cache:
+  api-deno-cache:

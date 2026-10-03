@@ -46,7 +46,7 @@ if [[ "$mode" == "--finalize" ]]; then
   for svc in db auth rest functions; do
     [[ -z "$(container_of "$svc")" ]] || die "old '$svc' container still exists; is the old stack running?"
   done
-  docker volume rm wurmple_db-data wurmple_db-config 2>/dev/null || true
+  docker volume rm wurmple_db-data wurmple_db-config wurmple_deno-cache 2>/dev/null || true
   rm -rf "$selfhost/.env.old-stack.bak" "$selfhost/site.old-stack.bak"
   for image in supabase/postgres:17.6.1.136 supabase/gotrue:v2.196.0 supabase/edge-runtime:v1.76.2 postgrest/postgrest:v14.17; do
     docker image rm "$image" 2>/dev/null && say "removed image $image" || true
