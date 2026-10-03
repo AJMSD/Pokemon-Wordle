@@ -8,13 +8,13 @@ const USER_ID = '3f1c2a9e-0000-4000-8000-0000000000e2'
 const TARGET = { id: 25, name: 'pikachu' }
 const HINTS = { ability: 'static', generation: 'generation-i', types: ['electric'] }
 
-function b64url(obj: object): string {
-  return Buffer.from(JSON.stringify(obj)).toString('base64url')
+// Opaque session token, as issued by the API.
+function fakeToken(): string {
+  return `e2e-session-${Math.random().toString(36).slice(2)}`
 }
 
-function fakeJwt(): string {
-  const exp = Math.floor(Date.now() / 1000) + 3600
-  return `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url({ sub: USER_ID, role: 'authenticated', exp, email: 'e2e@example.com' })}.sig`
+function storedAuth(token: string, email: string) {
+  return { token, user: { id: USER_ID, email, email_confirmed_at: '2026-01-01T00:00:00Z' } }
 }
 
 function letterResults(guess: string, target: string): string[] {
@@ -67,7 +67,7 @@ async function json(route: Route, body: unknown, status = 200) {
 }
 
 async function signIn(page: Page, s: MockState) {
-  const token = fakeJwt()
+  const token = fakeToken()
   const profile = {
     id: USER_ID, username: 'E2ETrainer', display_ball: 'poke-ball', avatar_form_id: null,
     created_at: '2026-01-01T00:00:00Z', tier_prompt_dismissed: true,
@@ -88,29 +88,17 @@ async function signIn(page: Page, s: MockState) {
       s.guesses.push(guess.toLowerCase())
       return json(route, { ...sessionBody(s), newly_unlocked_balls: [] })
     }
-    if (path.endsWith('/get-me')) return json(route, { profile, stats })
+    if (path.endsWith('/get-me')) return json(route, { user: storedAuth(token, 'e2e@example.com').user, profile, stats })
     if (path.endsWith('/get-balls')) return json(route, { balls: [] })
-    if (path.includes('/rest/v1/profiles')) return json(route, [profile])
-    if (path.includes('/rest/v1/')) return json(route, [])
-    if (path.endsWith('/auth/v1/user')) return json(route, { id: USER_ID, email: 'e2e@example.com', email_confirmed_at: '2026-01-01T00:00:00Z' })
     return json(route, {})
   })
 
-  await page.addInitScript(({ token, userId }) => {
-    const session = {
-      access_token: token, refresh_token: 'refresh', token_type: 'bearer', expires_in: 3600,
-      expires_at: Math.floor(Date.now() / 1000) + 3600,
-      user: {
-        id: userId, aud: 'authenticated', role: 'authenticated', email: 'e2e@example.com',
-        email_confirmed_at: '2026-01-01T00:00:00Z', app_metadata: {}, user_metadata: {},
-        created_at: '2026-01-01T00:00:00Z',
-      },
-    }
+  await page.addInitScript((auth) => {
     if (!sessionStorage.getItem('seeded')) {
-      localStorage.setItem('sb-wurmple-api-auth-token', JSON.stringify(session))
+      localStorage.setItem('wurmple_auth', JSON.stringify(auth))
       sessionStorage.setItem('seeded', '1')
     }
-  }, { token, userId: USER_ID })
+  }, storedAuth(token, 'e2e@example.com'))
 }
 
 test.describe('Signed-in game (mocked server)', () => {
@@ -188,7 +176,7 @@ test('guest progress is migrated after sign-up', async ({ page }) => {
   await expect(page.locator('.guess-item')).toHaveCount(1, { timeout: 5000 })
 
   const calls: { path: string; body: unknown }[] = []
-  const token = fakeJwt()
+  const token = fakeToken()
   const created = new Date().toISOString()
   await page.route(`${API}/**`, async (route) => {
     const req = route.request()
@@ -201,20 +189,13 @@ test('guest progress is migrated after sign-up', async ({ page }) => {
     }
     if (path.endsWith('/get-session')) return json(route, sessionBody({ guesses: ['bulbasaur'], submitDelayMs: 0, calls: [] }))
     const profile = { id: USER_ID, username: 'NewTrainer', display_ball: 'poke-ball', created_at: created, tier_prompt_dismissed: true }
-    if (path.endsWith('/get-me')) return json(route, { profile, stats: null })
-    if (path.includes('/rest/v1/profiles')) return json(route, [profile])
-    if (path.endsWith('/create-profile')) return json(route, { profile })
+    // A brand-new account (profile created at verification moments ago).
+    if (path.endsWith('/get-me')) return json(route, { user: storedAuth(token, 'new@example.com').user, profile, stats: null })
     return json(route, {})
   })
-  await page.evaluate(({ token, userId }) => {
-    localStorage.setItem('sb-wurmple-api-auth-token', JSON.stringify({
-      access_token: token, refresh_token: 'r', token_type: 'bearer', expires_in: 3600,
-      expires_at: Math.floor(Date.now() / 1000) + 3600,
-      user: { id: userId, aud: 'authenticated', role: 'authenticated', email: 'new@example.com',
-        email_confirmed_at: new Date().toISOString(), app_metadata: {}, user_metadata: { username: 'NewTrainer' },
-        created_at: new Date().toISOString() },
-    }))
-  }, { token, userId: USER_ID })
+  await page.evaluate((auth) => {
+    localStorage.setItem('wurmple_auth', JSON.stringify(auth))
+  }, storedAuth(token, 'new@example.com'))
   await page.reload()
   await expect.poll(() => calls.some((c) => c.path.endsWith('/migrate-guest')), { timeout: 10000 }).toBe(true)
   const migrate = calls.find((c) => c.path.endsWith('/migrate-guest'))!.body as Record<string, unknown>
