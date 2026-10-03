@@ -278,6 +278,7 @@ rollback() {
     [[ -f "$selfhost/.env.old-stack.bak" ]] && mv -f "$selfhost/.env.old-stack.bak" "$selfhost/.env"
     if [[ -d "$selfhost/site.old-stack.bak" ]]; then
       rsync -a --delete "$selfhost/site.old-stack.bak/" "$selfhost/site/" && rm -rf "$selfhost/site.old-stack.bak"
+      chmod -R a+rX "$selfhost/site"
     fi
     fix_ownership
     git reset -q --hard "$old_commit" || say "git reset failed; fix the checkout by hand"
@@ -342,6 +343,7 @@ enter_stage "site"
 mkdir -p "$selfhost/site"
 rsync -a --delete "$selfhost/site/" "$selfhost/site.old-stack.bak/"
 rsync -a --delete "$work/site/" "$selfhost/site/"
+chmod -R a+rX "$selfhost/site"
 
 enter_stage "smoke test"
 today="$(TZ=Asia/Tokyo date +%F)"
