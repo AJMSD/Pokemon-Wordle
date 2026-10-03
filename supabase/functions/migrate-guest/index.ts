@@ -1,19 +1,36 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { handleCors, jsonResponder } from '../_shared/cors.ts';
 import { checkRateLimit } from '../_shared/rateLimit.ts';
 import { resolveTarget, revealedHints, targetColumns } from '../_shared/target.ts';
+import { replayGuestGuesses } from '../_shared/migrateGuest.ts';
+import { buildSessionResponse } from '../_shared/sessionResponse.ts';
 
+// Client guest ids are crypto.randomUUID() or a base36 fallback.
+const GUEST_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
+
+/**
+ * Turns a guest's locally played game into the signed-in user's session for
+ * today. The server derives the guest target by the public formula, replays the
+ * claimed guesses (so hint flags and completion are computed, not trusted) and
+ * creates the session only if the user has none yet. It never credits stats
+ * (a `daily_results` row is written for finished games so the repair path in
+ * get-session does not credit them later) and never touches guest rows.
+ *
+ * Request:  { puzzle_date_key, guest_id, guesses: string[] }
+ * Errors:   400 {code: 'missing_fields'|'invalid_guest_id'|'wrong_date'|'invalid_guesses'},
+ *           401 (auth), 429 (rate limit).
+ * Success:  200 session body (see buildSessionResponse) + `migrated: boolean`
+ *           (false when the user already had a session today: that one is returned).
+ */
 Deno.serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
+  const json = jsonResponder(req);
 
   const start = Date.now();
 
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return json({ error: 'Method not allowed' }, 405);
   }
 
   const supabaseAdmin = createClient(
@@ -25,10 +42,7 @@ Deno.serve(async (req: Request) => {
     // Require auth
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Authorization required' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return json({ error: 'Authorization required' }, 401);
     }
 
     const supabaseUser = createClient(
@@ -39,120 +53,110 @@ Deno.serve(async (req: Request) => {
     const { data: { user } } = await supabaseUser.auth.getUser();
 
     if (!user) {
-      return new Response(JSON.stringify({ error: 'Invalid or expired token' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return json({ error: 'Invalid or expired token' }, 401);
     }
 
     const rateLimit = await checkRateLimit(supabaseAdmin, `migrate-guest:user:${user.id}`, 5, 3600);
     if (!rateLimit.allowed) {
-      return new Response(
-        JSON.stringify({ error: 'Rate limit exceeded', retry_after: rateLimit.retryAfter }),
-        {
-          status: 429,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': String(rateLimit.retryAfter) },
-        }
+      return json(
+        { error: 'Rate limit exceeded', retry_after: rateLimit.retryAfter },
+        429,
+        { 'Retry-After': String(rateLimit.retryAfter) }
       );
     }
 
     const body = await req.json();
-    const { guest_id, puzzle_date_key } = body;
+    const { guest_id, puzzle_date_key, guesses } = body;
 
     if (!guest_id || !puzzle_date_key) {
-      return new Response(JSON.stringify({ error: 'Missing guest_id or puzzle_date_key' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return json({ error: 'Missing guest_id or puzzle_date_key', code: 'missing_fields' }, 400);
+    }
+    if (typeof guest_id !== 'string' || !GUEST_ID_RE.test(guest_id)) {
+      return json({ error: 'Invalid guest_id', code: 'invalid_guest_id' }, 400);
     }
 
     // Only allow migrating today's session
     const todayKey = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
     if (puzzle_date_key !== todayKey) {
-      return new Response(JSON.stringify({ error: "Can only migrate today's session" }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return json({ error: "Can only migrate today's session", code: 'wrong_date' }, 400);
     }
 
-    // Load guest session
-    const { data: guestSession } = await supabaseAdmin
-      .from('daily_sessions')
-      .select('*')
-      .match({ guest_id, puzzle_date_key })
-      .single();
+    // The guest's target comes from the public formula (what the offline client used).
+    const target = await resolveTarget(supabaseAdmin, puzzle_date_key, guest_id, null, { guest: true });
 
-    if (!guestSession) {
-      return new Response(JSON.stringify({ error: 'Guest session not found' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    const replay = replayGuestGuesses(guesses, target.name);
+    if (!replay.ok) {
+      return json({ error: replay.error, code: 'invalid_guesses' }, 400);
     }
 
-    // Check for existing user session today
-    const { data: existingUserSession } = await supabaseAdmin
-      .from('daily_sessions')
-      .select('id')
-      .match({ user_id: user.id, puzzle_date_key })
-      .single();
+    const loadExisting = () =>
+      supabaseAdmin
+        .from('daily_sessions')
+        .select('*')
+        .match({ user_id: user.id, puzzle_date_key })
+        .maybeSingle();
 
-    if (existingUserSession) {
-      return new Response(JSON.stringify({ error: 'User already has a session today' }), {
-        status: 409,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    const respond = (session: Parameters<typeof buildSessionResponse>[0], migrated: boolean, t = target) => {
+      console.log(JSON.stringify({ fn: 'migrate-guest', method: req.method, user_id: user.id, migrated, status: 200, duration_ms: Date.now() - start }));
+      return json({ ...buildSessionResponse(session, t, revealedHints(session.hint_flags, t.data)), migrated }, 200);
+    };
+
+    const { data: existing, error: existingError } = await loadExisting();
+    if (existingError) throw new Error(`session lookup: ${existingError.message}`);
+    if (existing) {
+      // Existing sessions win; answer with the user's own target.
+      const t = await resolveTarget(supabaseAdmin, puzzle_date_key, user.id, existing);
+      return respond(existing, false, t);
     }
 
-    // The guesses were made against the guest's target, so it moves with them.
-    const target = await resolveTarget(supabaseAdmin, puzzle_date_key, guest_id, guestSession);
-
-    // Insert migrated user session
-    const { data: migratedSession } = await supabaseAdmin
+    const { data: inserted, error: insertError } = await supabaseAdmin
       .from('daily_sessions')
       .insert({
         user_id: user.id,
         puzzle_date_key,
         ...targetColumns(target),
-        guesses: guestSession.guesses,
-        hint_flags: guestSession.hint_flags,
-        completion_state: guestSession.completion_state,
+        guesses: replay.guesses,
+        hint_flags: replay.hint_flags,
+        completion_state: replay.completion_state,
         version: 1,
       })
       .select()
       .single();
 
-    // Delete guest session
-    await supabaseAdmin
-      .from('daily_sessions')
-      .delete()
-      .match({ guest_id, puzzle_date_key });
-
-    const responseBody: Record<string, unknown> = {
-      guesses: migratedSession!.guesses,
-      hint_flags: migratedSession!.hint_flags,
-      hints: revealedHints(migratedSession!.hint_flags, target.data),
-      completion_state: migratedSession!.completion_state,
-      version: migratedSession!.version,
-      puzzle_metadata: {
-        name_length: target.name.replace(/[^a-z]/gi, '').length,
-      },
-    };
-
-    if (migratedSession!.completion_state !== 'playing') {
-      responseBody.pokemon_name = target.name;
+    if (insertError || !inserted) {
+      // Lost a race with get-session creating the user's row: return that one.
+      const { data: raced } = await loadExisting();
+      if (raced && insertError?.code === '23505') {
+        const t = await resolveTarget(supabaseAdmin, puzzle_date_key, user.id, raced);
+        return respond(raced, false, t);
+      }
+      throw new Error(`session insert: ${insertError?.message ?? 'no row returned'}`);
     }
 
-    console.log(JSON.stringify({ fn: 'migrate-guest', method: req.method, user_id: user.id, status: 200, duration_ms: Date.now() - start }));
+    // A finished migrated game earns no stats: record it as already archived so
+    // the get-session repair path never credits it.
+    if (replay.completion_state !== 'playing') {
+      const { error: archiveError } = await supabaseAdmin
+        .from('daily_results')
+        .upsert(
+          {
+            user_id: user.id,
+            puzzle_date_key,
+            pokemon_name: target.name,
+            guesses: replay.guesses,
+            guess_count: replay.guesses.length,
+            result: replay.completion_state,
+          },
+          { onConflict: 'user_id,puzzle_date_key', ignoreDuplicates: true }
+        );
+      if (archiveError) {
+        console.error(JSON.stringify({ fn: 'migrate-guest', event: 'archive_failed', error: archiveError.message }));
+      }
+    }
 
-    return new Response(JSON.stringify(responseBody), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return respond(inserted, true);
   } catch (err) {
     console.error(JSON.stringify({ fn: 'migrate-guest', error: String(err), status: 500 }));
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return json({ error: 'Internal server error' }, 500);
   }
 });

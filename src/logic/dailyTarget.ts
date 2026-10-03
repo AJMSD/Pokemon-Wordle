@@ -51,22 +51,29 @@ function isCoprimeToCount(a: number): boolean {
 }
 
 /**
- * National dex id (1-based) of the Pokémon `seedId` should guess on `dateKey`.
- *
- * From PER_USER_START_DATE each seed gets an affine permutation of the dex
- * (`a*day + b mod 1025` with `a` coprime to 1025), so a user never repeats a
- * Pokémon within 1025 consecutive days and different users diverge.
+ * Affine pick of a national dex id (1-based) for `dateKey`: `a*day + b mod 1025`
+ * with `a` forced coprime to 1025, so one seed pair never repeats a Pokémon
+ * within 1025 consecutive days. Pure; callers decide where the seeds come from
+ * (public hash for guests, server-secret HMAC for users).
  */
-export function getDailyPokemonId(dateKey: string, seedId: string): number {
-  if (!isPerUserDate(dateKey)) return legacySharedIndex(dateKey) + 1;
-
-  let a = fnv1a(`wurmple:a:${seedId}`) % POKEMON_COUNT;
+export function affinePick(dateKey: string, aSeed: number, bSeed: number): number {
+  let a = (aSeed >>> 0) % POKEMON_COUNT;
   while (!isCoprimeToCount(a)) a = (a + 1) % POKEMON_COUNT;
-  const b = fnv1a(`wurmple:b:${seedId}`) % POKEMON_COUNT;
+  const b = (bSeed >>> 0) % POKEMON_COUNT;
 
   // Both factors are < 1025, so the product stays far below 2^53.
   const d = ((dayNumber(dateKey) % POKEMON_COUNT) + POKEMON_COUNT) % POKEMON_COUNT;
   return ((a * d + b) % POKEMON_COUNT) + 1;
+}
+
+/**
+ * National dex id (1-based) for `seedId` on `dateKey` using the PUBLIC seed
+ * formula. Only for guests: signed-in users' targets are derived server-side
+ * with a secret (supabase/functions/_shared/secretTarget.ts).
+ */
+export function getDailyPokemonId(dateKey: string, seedId: string): number {
+  if (!isPerUserDate(dateKey)) return legacySharedIndex(dateKey) + 1;
+  return affinePick(dateKey, fnv1a(`wurmple:a:${seedId}`), fnv1a(`wurmple:b:${seedId}`));
 }
 
 const GENERATION_LAST_IDS: Array<[number, string]> = [

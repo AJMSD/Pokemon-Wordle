@@ -1,7 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { corsHeadersFor, handleCors } from '../_shared/cors.ts';
 
 Deno.serve(async (req: Request) => {
+  const corsHeaders = corsHeadersFor(req);
   const cors = handleCors(req);
   if (cors) return cors;
 

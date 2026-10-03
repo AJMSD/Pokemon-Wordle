@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { corsHeadersFor, handleCors } from '../_shared/cors.ts';
 
 function getStreakTierBall(streak: number): string {
   if (streak >= 14) return 'master-ball';
@@ -11,6 +11,7 @@ function getStreakTierBall(streak: number): string {
 const STANDARD_ORDER = ['poke-ball', 'great-ball', 'ultra-ball', 'master-ball'];
 
 Deno.serve(async (req: Request) => {
+  const corsHeaders = corsHeadersFor(req);
   const cors = handleCors(req);
   if (cors) return cors;
 

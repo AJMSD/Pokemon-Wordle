@@ -4,6 +4,7 @@ import {
   isPerUserDate,
   legacySharedIndex,
 } from '../../../src/logic/dailyTarget.ts';
+import { getSecretDailyPokemonId } from './secretTarget.ts';
 
 export interface PokemonData {
   ability: string;
@@ -28,11 +29,11 @@ interface SessionTargetFields {
 }
 
 async function fetchFromPokeAPI(id: number): Promise<{ name: string; data: PokemonData }> {
-  const pokemonRes = await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);
+  const pokemonRes = await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`, { signal: AbortSignal.timeout(5000) });
   if (!pokemonRes.ok) throw new Error(`PokeAPI pokemon ${id}: ${pokemonRes.status}`);
   const pokemon = await pokemonRes.json();
 
-  const speciesRes = await fetch(pokemon.species.url);
+  const speciesRes = await fetch(pokemon.species.url, { signal: AbortSignal.timeout(5000) });
   if (!speciesRes.ok) throw new Error(`PokeAPI species ${id}: ${speciesRes.status}`);
   const species = await speciesRes.json();
 
@@ -108,7 +109,8 @@ export async function resolveTarget(
   admin: SupabaseClient,
   dateKey: string,
   seedId: string,
-  session?: SessionTargetFields | null
+  session?: SessionTargetFields | null,
+  opts: { guest?: boolean } = {}
 ): Promise<Target> {
   if (session?.target_pokemon_id && session.target_pokemon_name && session.target_pokemon_data) {
     return {
@@ -120,7 +122,11 @@ export async function resolveTarget(
   }
   if (!isPerUserDate(dateKey)) return getLegacyPuzzle(admin, dateKey);
 
-  const id = getDailyPokemonId(dateKey, seedId);
+  // Users get a salted (server-secret) pick; guests (migrate-guest only) keep
+  // the public formula the client uses offline.
+  const id = opts.guest
+    ? getDailyPokemonId(dateKey, seedId)
+    : await getSecretDailyPokemonId(dateKey, seedId);
   const info = await getPokemonInfo(admin, id);
   return { pokemonId: id, name: info.name, data: info.data, puzzleId: null };
 }
