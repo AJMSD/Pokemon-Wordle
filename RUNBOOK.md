@@ -28,6 +28,17 @@ docker compose up -d               # recreate anything whose config changed
 The tunnel runs as the `cloudflared-ajmsd-ops` systemd service
 (config: `/etc/cloudflared/config.yml`).
 
+### On boot
+The server is a laptop (lid close ignored in `/etc/systemd/logind.conf`).
+At boot: the `docker`, `cloudflared-ajmsd-ops` and `cron` services are enabled,
+containers use `restart: unless-stopped`, and the crontab runs
+`scripts/start.sh` (`docker compose up -d`) so containers that were stopped or
+removed before the reboot also come back:
+
+```
+@reboot $HOME/Code/Pokemon-Wordle/selfhost/scripts/start.sh >> $HOME/Code/Pokemon-Wordle/selfhost/start.log 2>&1
+```
+
 ---
 
 ## Rate limits
@@ -162,7 +173,8 @@ authenticator, supabase_auth_admin etc., then update `.env` and `up -d`.
 - Once a day the script runs `select public.cleanup_stale_rows();` (stale
   rate-limit and guest rows); stamp in `selfhost/.cleanup-stamp`. Failures are
   logged as `cleanup_stale_rows failed (ignored)` and retried on the next run.
-- The build needs Node 20.19+ or 22.12+ (Vite 8); tests need Node 22.12+.
+- The server has Node 18.19.1, so the site builds with Vite 6 (Vite 7+ needs
+  Node 20.19+). Tests (Vitest 5) need Node 22.12+ and run locally/CI only.
 
 ## Cloudflare tunnel (cloudflared)
 
