@@ -116,7 +116,7 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
               key={p.id}
               onClick={() => setSelected(p.id)}
               aria-pressed={selected === p.id}
-              className={`border-2 p-1 flex flex-col items-center pixel-focus ${
+              className={`border-2 p-1 flex flex-col items-center pixel-focus [content-visibility:auto] [contain-intrinsic-size:auto_5.5rem] ${
                 selected === p.id
                   ? 'border-pokemon-red bg-red-50'
                   : 'border-gray-200 hover:border-gray-400'
@@ -128,6 +128,7 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
                 alt={p.name}
                 className="sprite w-full h-auto"
                 loading="lazy"
+                decoding="async"
               />
               <span className="text-[9px] text-gray-500 w-full text-center leading-tight mt-0.5 break-all">{p.name}</span>
             </button>
