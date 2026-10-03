@@ -6,6 +6,7 @@ import { useAuthStore, BALL_NAMES } from '../store/authStore'
 import { getAvatarUrl } from '../utils/avatarUtils'
 import DefaultAvatar from './DefaultAvatar'
 import useAvatarSrc from '../hooks/useAvatarSrc'
+import logoUrl from '../assets/logo.png'
 import streakIcon from '../../streak.png'
 import { ballSpriteUrl } from '../lib/sprites'
 
@@ -50,7 +51,7 @@ const Header: React.FC<HeaderProps> = ({ onShowCollection, onShowProfile, onShow
         aria-label="Go to game"
       >
         <img
-          src={`${import.meta.env.BASE_URL}logo.png`}
+          src={logoUrl}
           alt="Wurmple logo"
           className="sprite h-7 w-auto flex-shrink-0"
         />
