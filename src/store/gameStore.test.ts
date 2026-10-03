@@ -632,3 +632,91 @@ describe('gameStore scoped local persistence', () => {
     expect(useGameStore.getState().guesses).toEqual(['pikachu'])
   })
 })
+
+describe('gameStore guest server play (per-user days)', () => {
+  const GUEST_ID = '3f1c2a9e-0000-4000-8000-0000000000aa'
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    // 2026-10-06 12:00 JST: a per-user day.
+    vi.setSystemTime(new Date('2026-10-06T03:00:00Z'))
+    vi.stubEnv('VITE_API_URL', 'https://api.example.test')
+    vi.stubEnv('VITE_API_ANON_KEY', 'anon-key')
+    localStorage.clear()
+    localStorage.setItem('wurmple_guest_id', GUEST_ID)
+    const store = useGameStore.getState()
+    store.setStorageScope('someone')
+    store.invalidateServerSessionSync()
+    store.setStorageScope(null)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+    vi.restoreAllMocks()
+  })
+
+  function mockFetch(responder: (url: string, init?: RequestInit) => unknown) {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    const fetchMock = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      calls.push({ url, init })
+      if (String(url).includes('pokeapi.co')) throw new Error('offline')
+      return { ok: true, status: 200, json: async () => responder(url, init) }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    return calls
+  }
+
+  it('never derives the answer locally', async () => {
+    mockFetch(() => session())
+    await useGameStore.getState().initializeGame()
+    expect(useGameStore.getState().usesServer()).toBe(true)
+    expect(useGameStore.getState().dailyPokemon).toBeNull()
+    const saved = localStorage.getItem('wurmple_game:guest') ?? ''
+    const answer = (await import('../data/pokemonNames')).POKEMON_NAMES[getDailyPokemonId('2026-10-06', GUEST_ID) - 1]
+    expect(saved.includes(`"${answer}"`)).toBe(false)
+  })
+
+  it('loads the session with the anon key and guest id, and submits guesses to the server', async () => {
+    const calls = mockFetch((url) =>
+      String(url).includes('submit-guess')
+        ? session({ guesses: ['pikachu'], results: [['absent', 'absent', 'absent', 'absent', 'absent', 'absent', 'absent']], version: 3 })
+        : session({ name_length: 7 })
+    )
+    await useGameStore.getState().initializeGame()
+    await useGameStore.getState().loadGuestServerSession()
+
+    const get = calls.find(c => c.url.includes('/get-session'))!
+    expect(get.url).toContain('puzzle_date_key=2026-10-06')
+    expect(get.url).toContain(`guest_id=${GUEST_ID}`)
+    expect((get.init?.headers as Record<string, string>).Authorization).toBe('Bearer anon-key')
+    expect(useGameStore.getState().nameLength).toBe(7)
+
+    await useGameStore.getState().submitGuessToServer('pikachu')
+    const post = calls.find(c => c.url.includes('/submit-guess'))!
+    expect(JSON.parse(String(post.init?.body))).toMatchObject({ guess: 'pikachu', guest_id: GUEST_ID, puzzle_date_key: '2026-10-06' })
+    expect(useGameStore.getState().guessResults).toHaveLength(1)
+  })
+
+  it('drops a guest response that lands after the player signed in', async () => {
+    let release: (v: unknown) => void = () => {}
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => new Promise(r => { release = r })))
+    await useGameStore.getState().initializeGame()
+    const load = useGameStore.getState().loadGuestServerSession()
+    useGameStore.getState().setStorageScope('user-9')
+    release({ ok: true, status: 200, json: async () => session({ guesses: ['eevee'], results: [['absent']] }) })
+    await load
+    expect(useGameStore.getState().guesses).toEqual([])
+  })
+
+  it('keeps shared-puzzle days local for guests', async () => {
+    vi.setSystemTime(new Date('2026-10-03T03:00:00Z'))
+    const calls = mockFetch(() => session())
+    await useGameStore.getState().initializeGame()
+    await useGameStore.getState().loadGuestServerSession()
+    expect(useGameStore.getState().usesServer()).toBe(false)
+    expect(useGameStore.getState().dailyPokemon?.id).toBe(getDailyPokemonId('2026-10-03', GUEST_ID))
+    expect(calls.some(c => c.url.includes('get-session'))).toBe(false)
+  })
+})

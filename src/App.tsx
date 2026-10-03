@@ -119,7 +119,11 @@ function App() {
       void initializeGame()
       void initializeServerSession(persisted.accessToken)
     }
-    initialize().then(() => initializeGame())
+    // Guests on per-user days play on the server too; their session loads
+    // once auth has settled as guest (a signed-in scope makes this a no-op).
+    initialize()
+      .then(() => initializeGame())
+      .then(() => useGameStore.getState().loadGuestServerSession())
   }, [initialize, initializeGame, initializeServerSession])
 
   useEffect(() => {

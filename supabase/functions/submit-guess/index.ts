@@ -10,6 +10,8 @@ import { normalizeName } from '../_shared/letterMatch.ts';
 import { MAX_GUESSES, hintFlagsFor, isValidPokemonName } from '../_shared/migrateGuest.ts';
 import { buildSessionResponse } from '../_shared/sessionResponse.ts';
 import { awardBalls, getYesterdayJST, recordCompletion } from '../_shared/completion.ts';
+import { getClientIP, guestSessionAllowed } from '../_shared/guestLimit.ts';
+import { identifyPlayer, ownerOf, rateLimitKey, targetSeed } from '../_shared/player.ts';
 
 Deno.serve(async (req: Request) => {
   const cors = handleCors(req);
@@ -29,7 +31,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json();
-    const { guess, session_version, puzzle_date_key } = body;
+    const { guess, session_version, puzzle_date_key, guest_id } = body;
 
     if (!guess || typeof guess !== 'string' || !puzzle_date_key) {
       return json({ error: 'Missing required fields' }, 400);
@@ -41,28 +43,28 @@ Deno.serve(async (req: Request) => {
       return json({ error: "This puzzle has ended. Refresh for today's Pokémon." }, 400);
     }
 
-    // The token's subject lets the session load start alongside getUser().
-    // Guests play entirely on the client; the server only serves signed-in users.
+    // Signed-in players by token subject (confirmed via getUser below);
+    // guests by the anon key plus their guest_id.
     const authHeader = req.headers.get('Authorization');
-    const userId = jwtSubject(authHeader);
-    if (!userId) {
+    const player = identifyPlayer(jwtSubject(authHeader), guest_id);
+    if (!player) {
       return json({ error: 'Authorization required' }, 401);
     }
+    const userId = player.kind === 'user' ? player.id : null;
+    const owner = ownerOf(player);
 
-    // Rate limit: 10 guesses/minute per user.
-    const rateLimitKey = `submit-guess:user:${userId}`;
-
+    // Rate limit: 10 guesses/minute per player.
     const [user, rateLimit, sessionResult] = await Promise.all([
-      getAuthUser(authHeader),
-      checkRateLimit(supabaseAdmin, rateLimitKey, 10, 60),
+      userId ? getAuthUser(authHeader) : Promise.resolve(null),
+      checkRateLimit(supabaseAdmin, rateLimitKey('submit-guess', player), 10, 60),
       supabaseAdmin
         .from('daily_sessions')
         .select('*')
-        .match({ user_id: userId, puzzle_date_key })
+        .match({ ...owner, puzzle_date_key })
         .maybeSingle(),
     ]);
 
-    if (user?.id !== userId) {
+    if (userId && user?.id !== userId) {
       return json({ error: 'Invalid or expired token' }, 401);
     }
     const isVerified = !!user?.email_confirmed_at;
@@ -76,13 +78,17 @@ Deno.serve(async (req: Request) => {
     }
 
     let session = sessionResult.data;
-    const target = await resolveTarget(supabaseAdmin, puzzle_date_key, userId, session);
+    const target = await resolveTarget(supabaseAdmin, puzzle_date_key, targetSeed(player), session);
+
+    if (!session && player.kind === 'guest' && !(await guestSessionAllowed(supabaseAdmin, getClientIP(req)))) {
+      return json({ error: 'Too many new guest games from this network. Sign in to keep playing.' }, 429, { 'Retry-After': '3600' });
+    }
 
     if (!session) {
       const { data: newSession } = await supabaseAdmin
         .from('daily_sessions')
         .insert({
-          user_id: userId,
+          ...owner,
           puzzle_date_key,
           ...targetColumns(target),
           guesses: [],
@@ -98,7 +104,7 @@ Deno.serve(async (req: Request) => {
         ({ data: session } = await supabaseAdmin
           .from('daily_sessions')
           .select('*')
-          .match({ user_id: userId, puzzle_date_key })
+          .match({ ...owner, puzzle_date_key })
           .single());
       }
     } else {
@@ -158,10 +164,11 @@ Deno.serve(async (req: Request) => {
     }
 
     const ballsToAward: string[] = [];
-    const tracksStats = isVerified;
+    // Stats, streaks and balls only exist for verified accounts.
+    const tracksStats = userId !== null && isVerified;
 
     // Participation stat: increment on first guess of the day (verified only)
-    if (tracksStats && session.guesses.length === 0) {
+    if (tracksStats && userId && session.guesses.length === 0) {
       const [{ data: stats }, { data: profile }] = await Promise.all([
         supabaseAdmin.from('user_stats').select('*').eq('user_id', userId).single(),
         supabaseAdmin.from('profiles').select('id').eq('id', userId).maybeSingle(),
@@ -205,7 +212,7 @@ Deno.serve(async (req: Request) => {
     // On completion, archive the result once and update stats (verified users only).
     // The session is already committed, so a failure here is logged and repaired
     // by the next get-session rather than failing the guess.
-    if (completionState !== 'playing' && tracksStats) {
+    if (completionState !== 'playing' && tracksStats && userId) {
       try {
         ballsToAward.push(...await recordCompletion(supabaseAdmin, {
           userId,
@@ -219,7 +226,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const newlyUnlocked = tracksStats
+    const newlyUnlocked = tracksStats && userId
       ? await awardBalls(supabaseAdmin, userId, [...new Set(ballsToAward)])
       : [];
 
@@ -235,7 +242,7 @@ Deno.serve(async (req: Request) => {
     );
     responseBody.newly_unlocked_balls = newlyUnlocked;
 
-    console.log(JSON.stringify({ fn: 'submit-guess', method: req.method, user_id: userId, status: 200, duration_ms: Date.now() - start }));
+    console.log(JSON.stringify({ fn: 'submit-guess', method: req.method, player: player.kind, user_id: userId, status: 200, duration_ms: Date.now() - start }));
 
     return json(responseBody, 200);
   } catch (err) {

@@ -148,6 +148,7 @@ async function resetToFreshGuestGameState(logLabel: string) {
   gameStore.invalidateServerSessionSync();
   try {
     await gameStore.initializeGame();
+    await gameStore.loadGuestServerSession();
   } catch (err) {
     console.error(logLabel, err);
   }

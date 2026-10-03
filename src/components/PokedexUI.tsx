@@ -13,7 +13,7 @@ const PokedexUI: React.FC = () => {
   const {
     makeGuess, submitGuessToServer, error, resetError,
     dailyPokemon, gameStatus, checkForNewDay, guessResults, nameLength,
-    initializeServerSession,
+    initializeServerSession, usesServer,
     staleLock, rateLimitUntil, rejectedGuess,
     clearStaleLock, clearRejectedGuess, clearRateLimitLock,
   } = useGameStore()
@@ -159,6 +159,8 @@ const PokedexUI: React.FC = () => {
     if (!isGuest && session?.access_token) {
       // Optimistic: the guess shows at once, so free the input without waiting.
       void submitGuessToServer(currentGuess, session.access_token).then(won => { if (won) fetchMe() })
+    } else if (isGuest && usesServer()) {
+      void submitGuessToServer(currentGuess)
     } else {
       await makeGuess(currentGuess)
     }
@@ -304,7 +306,8 @@ const PokedexUI: React.FC = () => {
                 onClick={() => {
                   clearStaleLock()
                   // Reload the server's view so the next guess carries the right version.
-                  if (session?.access_token) void initializeServerSession(session.access_token)
+                  if (!isGuest && session?.access_token) void initializeServerSession(session.access_token)
+                  else if (isGuest) void initializeServerSession()
                 }}
               >
                 Dismiss

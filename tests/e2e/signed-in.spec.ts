@@ -222,3 +222,42 @@ test('guest progress is migrated after sign-up', async ({ page }) => {
   expect(migrate.guesses).toEqual(['bulbasaur'])
   expect(typeof migrate.guest_id).toBe('string')
 })
+
+test('guest on a per-user day plays on the server and never holds the answer', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-10-06T03:00:00Z') })
+  const s: MockState = { guesses: [], submitDelayMs: 800, calls: [] }
+  const bodies: unknown[] = []
+  await page.route(`${API}/**`, async (route) => {
+    const req = route.request()
+    if (req.method() === 'OPTIONS') return json(route, {})
+    const url = new URL(req.url())
+    s.calls.push(`${req.method()} ${url.pathname}${url.search}`)
+    if (url.pathname.endsWith('/get-session')) return json(route, sessionBody(s))
+    if (url.pathname.endsWith('/submit-guess')) {
+      const body = req.postDataJSON() as { guess: string; guest_id?: string }
+      bodies.push(body)
+      await new Promise((r) => setTimeout(r, s.submitDelayMs))
+      s.guesses.push(body.guess)
+      return json(route, sessionBody(s))
+    }
+    return json(route, {})
+  })
+
+  await page.goto('/')
+  const input = page.locator('.guess-input')
+  await expect(input).toBeEnabled({ timeout: 10000 })
+  await expect.poll(() => s.calls.some((c) => c.includes('/get-session') && c.includes('guest_id=')), { timeout: 10000 }).toBe(true)
+
+  await input.fill('pichu')
+  await input.press('Enter')
+  const row = page.locator('.guess-item').first()
+  await expect(row).toBeVisible({ timeout: 1000 })
+  const coloured = row.locator('.letter-block.correct, .letter-block.present, .letter-block.absent')
+  await expect(coloured).toHaveCount(0)
+  await expect(coloured).toHaveCount(5, { timeout: 5000 })
+  expect((bodies[0] as { guest_id?: string }).guest_id).toMatch(/^[A-Za-z0-9_-]{8,64}$/)
+
+  const leaked = await page.evaluate(() =>
+    Object.keys(localStorage).filter((k) => k.startsWith('wurmple_game') && /pikachu/i.test(localStorage.getItem(k) ?? '')))
+  expect(leaked).toEqual([])
+})

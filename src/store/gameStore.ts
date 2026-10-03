@@ -9,7 +9,7 @@ import {
   isValidPokemonName,
   normalizePokemonName
 } from '../utils/pokemonUtils';
-import { generationForId, getDailyPokemonId } from '../logic/dailyTarget';
+import { generationForId, getDailyPokemonId, isPerUserDate } from '../logic/dailyTarget';
 import { POKEMON_NAMES } from '../data/pokemonNames';
 
 type GameStorageScope = 'guest' | `user:${string}`;
@@ -29,9 +29,15 @@ function getStorageKeys(scope: GameStorageScope) {
   };
 }
 
-// Signed-in play is server-authoritative: the client never derives the answer.
 function isUserScope() {
   return activeStorageScope !== 'guest';
+}
+
+// Server-authoritative play: the client never derives the answer. Always for
+// signed-in players; for guests from the per-user start (earlier days keep the
+// shared, public pick and are scored locally).
+function isServerMode(dateKey = getJSTDateKey()) {
+  return isUserScope() || isPerUserDate(dateKey);
 }
 
 function letterCount(name: string): number {
@@ -39,9 +45,9 @@ function letterCount(name: string): number {
 }
 
 // Persisted: no locks or rejected guesses (they must not survive a reload).
-// For signed-in play the answer is only stored once the game is over.
+// For server play the answer is only stored once the game is over.
 function getPersistedStateSnapshot(state: GameState) {
-  const hideAnswer = isUserScope() && state.gameStatus === 'playing';
+  const hideAnswer = isServerMode(state.lastPlayedDate ?? undefined) && state.gameStatus === 'playing';
   return {
     dailyPokemon: hideAnswer ? null : state.dailyPokemon,
     guesses: state.guesses,
@@ -57,13 +63,13 @@ function getPersistedStateSnapshot(state: GameState) {
 }
 
 // Rebuilds state from a saved snapshot, ignoring anything stale or sensitive.
-function restoreSnapshot(saved: any, userScope: boolean): Partial<GameState> {
+function restoreSnapshot(saved: any, serverMode: boolean): Partial<GameState> {
   const status = saved.gameStatus === 'won' || saved.gameStatus === 'lost' ? saved.gameStatus : 'playing';
   const dailyPokemon: Pokemon | null =
-    userScope && status === 'playing' ? null : (saved.dailyPokemon ?? null);
+    serverMode && status === 'playing' ? null : (saved.dailyPokemon ?? null);
   const guesses: string[] = Array.isArray(saved.guesses) ? saved.guesses : [];
   let guessResults: LetterResult[][] = Array.isArray(saved.guessResults) ? saved.guessResults : [];
-  if (!userScope && dailyPokemon?.name && guessResults.length !== guesses.length) {
+  if (!serverMode && dailyPokemon?.name && guessResults.length !== guesses.length) {
     guessResults = guesses.map(g => getLetterMatchResult(g, dailyPokemon.name));
   }
   const nameLength = typeof saved.nameLength === 'number'
@@ -131,8 +137,19 @@ export function setAccessTokenProvider(provider: (() => string | null | undefine
   accessTokenProvider = provider;
 }
 
-function currentToken(fallback: string): string {
-  return accessTokenProvider?.() || fallback;
+function currentToken(fallback?: string): string {
+  return accessTokenProvider?.() || fallback || '';
+}
+
+// Signed-in players send their access token; guests send the anon key and
+// identify themselves with their guest id.
+function authHeaders(accessToken?: string): Record<string, string> {
+  const token = isUserScope() ? currentToken(accessToken) : (import.meta.env.VITE_API_ANON_KEY as string);
+  return { Authorization: `Bearer ${token}` };
+}
+
+function guestIdForRequest(): string | undefined {
+  return isUserScope() ? undefined : getGuestSeed();
 }
 
 function getGuestSeed(): string {
@@ -295,17 +312,18 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
 
     try {
       const today = getJSTDateKey();
-      const userScope = isUserScope();
+      const serverMode = isServerMode(today);
 
       // The server session already loaded today's game; nothing local to add.
-      if (userScope && get().puzzleDateKey === today) {
+      if (serverMode && get().puzzleDateKey === today) {
         set({ isLoading: false });
         return;
       }
 
       const keys = getStorageKeys(activeStorageScope);
-      // Guests compute their own target locally; signed-in play never does.
-      const targetId = userScope ? null : getDailyPokemonId(today, getGuestSeed());
+      // Only shared-puzzle guest days are scored locally; server play never
+      // derives the answer.
+      const targetId = serverMode ? null : getDailyPokemonId(today, getGuestSeed());
       const migratedLegacy = migrateLegacyGuestStorage(today);
       const lastPlayed = localStorage.getItem(keys.lastPlayedDate) ?? migratedLegacy?.legacyDate ?? null;
       const savedStateRaw = localStorage.getItem(keys.gameState) ?? (migratedLegacy ? JSON.stringify(migratedLegacy.parsedState) : null);
@@ -315,9 +333,9 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
         try {
           const savedState = JSON.parse(savedStateRaw);
           const savedId = savedState.dailyPokemon?.id;
-          if (userScope || savedId === undefined || savedId === targetId) {
+          if (serverMode || savedId === undefined || savedId === targetId) {
             set({
-              ...restoreSnapshot(savedState, userScope),
+              ...restoreSnapshot(savedState, serverMode),
               pokemonList: POKEMON_LIST,
               isLoading: false,
               lastPlayedDate: today,
@@ -325,7 +343,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
             // A first-load PokéAPI failure persists a bare stub; fill it in now.
             const restored = get().dailyPokemon;
             if (needsDetails(restored)) {
-              await hydratePokemonDetails(restored.id, isCurrent, userScope ? restored.name : undefined);
+              await hydratePokemonDetails(restored.id, isCurrent, serverMode ? restored.name : undefined);
             }
             return;
           }
@@ -348,7 +366,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       pendingGuesses = [];
       submitGeneration += 1;
 
-      if (userScope || targetId === null) {
+      if (serverMode || targetId === null) {
         // The answer comes from the server session; nothing to show until then.
         set({
           dailyPokemon: null,
@@ -407,7 +425,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
     } catch (error) {
       if (epoch !== initEpoch) return;
       // The bundled-name stub keeps the guest game playable without details.
-      if (!get().dailyPokemon && !isUserScope()) {
+      if (!get().dailyPokemon && !isServerMode()) {
         set({
           error: 'Failed to sync your Pokédex. Please try again.',
           isLoading: false
@@ -578,11 +596,23 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
     const today = getJSTDateKey();
 
     if (lastPlayedDate !== today) {
-      void get().initializeGame();
       if (accessToken && isUserScope()) {
+        void get().initializeGame();
         void get().initializeServerSession(accessToken);
+      } else if (lastPlayedDate !== null) {
+        // A real rollover in a running guest tab (not the first mount, when
+        // auth may still be loading and the scope isn't known yet).
+        void get().initializeGame().then(() => get().loadGuestServerSession());
+      } else {
+        void get().initializeGame();
       }
     }
+  },
+
+  loadGuestServerSession: async () => {
+    if (isUserScope() || !isServerMode()) return;
+    if (get().puzzleDateKey === getJSTDateKey()) return;
+    await get().initializeServerSession();
   },
 
   initializeServerSession: async (accessToken) => {
@@ -595,9 +625,11 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
         if (migrationGate) await migrationGate;
         if (requestEpoch !== serverSyncEpoch) return;
         // get-session creates today's session (and pins its target) on first read.
+        const guestId = guestIdForRequest();
+        const query = `puzzle_date_key=${puzzleDateKey}${guestId ? `&guest_id=${encodeURIComponent(guestId)}` : ''}`;
         const sessRes = await fetch(
-          `${base}/functions/v1/get-session?puzzle_date_key=${puzzleDateKey}`,
-          { headers: { Authorization: `Bearer ${currentToken(accessToken)}` } }
+          `${base}/functions/v1/get-session?${query}`,
+          { headers: authHeaders(accessToken) }
         );
         if (requestEpoch !== serverSyncEpoch) return;
         if (!sessRes.ok) return;
@@ -676,11 +708,12 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       try {
         const resp = await fetch(`${base}/functions/v1/submit-guess`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${currentToken(accessToken)}` },
+          headers: { 'Content-Type': 'application/json', ...authHeaders(accessToken) },
           body: JSON.stringify({
             guess: normalized,
             session_version: sessionVersion ?? 1,
             puzzle_date_key: puzzleDateKey,
+            guest_id: guestIdForRequest(),
           }),
         });
 
@@ -793,8 +826,10 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       set(state => applyServerSession(state, s, puzzleDateKey));
       persistGameStateSnapshot(get());
       localStorage.setItem(getStorageKeys(activeStorageScope).lastPlayedDate, puzzleDateKey);
-      // The guest game now lives on the account.
+      // The guest game now lives on the account. A fresh guest id means a later
+      // guest game (after signing out) won't replay the same Pokémon.
       clearScopeStorage('guest');
+      localStorage.removeItem(GUEST_ID_KEY);
 
       const pokemon = get().dailyPokemon;
       if (get().gameStatus !== 'playing' && needsDetails(pokemon)) {
@@ -808,8 +843,13 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
   },
 
   setStorageScope: (userId?: string | null) => {
-    activeStorageScope = resolveScope(userId);
+    const next = resolveScope(userId);
+    // Responses still in flight for the previous player must not land here.
+    if (next !== activeStorageScope) serverSyncEpoch += 1;
+    activeStorageScope = next;
   },
+
+  usesServer: () => isServerMode(),
 
   clearScopedProgress: (userId?: string | null) => {
     clearScopeStorage(resolveScope(userId));

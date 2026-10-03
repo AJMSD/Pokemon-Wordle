@@ -14,7 +14,7 @@ All responses are JSON. All endpoints support CORS preflight.
 ## Authentication
 
 Pass `Authorization: Bearer <access_token>` for authenticated requests.
-Auth-optional endpoints fall back to guest mode when the header is omitted.
+Guests send the anon key as the bearer and identify themselves with `guest_id` on the game endpoints.
 
 ---
 
@@ -136,106 +136,92 @@ Returns the full list of balls and which ones the user has unlocked.
 
 ### GET /get-session
 
-Loads (or creates) the current daily session for a user or guest.
+Loads (or creates) today's session. The answer never leaves the server while
+the game is in progress; the client gets per-guess `results` instead.
 
-**Auth:** Optional (Bearer token for users, `guest_id` query param for guests)
+**Auth:** Bearer access token for signed-in players. Guests send the anon key
+as the bearer plus `guest_id` (from the per-user start date; earlier shared-puzzle
+days are played locally by guests).
 
 **Query params**
-- `puzzle_date_key` (required) — e.g. `2026-04-26`
-- `guest_id` (required if unauthenticated)
+- `puzzle_date_key` (required) — today's JST date, e.g. `2026-10-06`
+- `guest_id` (guests only) — `^[A-Za-z0-9_-]{8,64}$`
 
 **Response 200**
 ```json
 {
   "guesses": ["pikachu", "bulbasaur"],
-  "hint_flags": { "ability": true, "generation": false, "type": false },
-  "hints": { "ability": "static" },
+  "results": [["absent","correct","absent","absent","absent","absent","absent"], ["..."]],
+  "name_length": 7,
+  "hint_flags": { "ability": false, "generation": false, "type": false },
+  "hints": {},
   "completion_state": "playing",
   "version": 3,
   "puzzle_metadata": { "name_length": 7 }
 }
 ```
 
-When `completion_state` is `won` or `lost`, `pokemon_name` is also included.
+When `completion_state` is `won` or `lost`, `pokemon_name` and `pokemon_id` are also included.
 
-**Errors:** 400 (missing params), 404 (puzzle not found)
+**Errors:** 400 (missing params / not today), 401 (no valid user token or guest id),
+429 (rate limit, or more than 50 new guest games per IP per day)
 
-**Rate limit:** 30 req/min per user/IP
+**Rate limit:** 30 req/min per player
 
 ---
 
 ### POST /submit-guess
 
-Submits a Pokémon name guess for today's puzzle.
+Submits a guess for today's puzzle.
 
-**Auth:** Optional
+**Auth:** as `/get-session` (guests put `guest_id` in the body)
 
 **Request body**
 ```json
 {
   "guess": "charizard",
   "session_version": 3,
-  "puzzle_date_key": "2026-04-26",
-  "guest_id": "guest-uuid-optional"
+  "puzzle_date_key": "2026-10-06",
+  "guest_id": "guests only"
 }
 ```
 
-**Response 200**
-```json
-{
-  "guesses": ["pikachu", "bulbasaur", "charizard"],
-  "hint_flags": { "ability": true, "generation": false, "type": false },
-  "hints": { "ability": "blaze" },
-  "completion_state": "playing",
-  "version": 4,
-  "newly_unlocked_balls": []
-}
-```
+**Response 200** — same shape as `/get-session`, plus `newly_unlocked_balls`
+(always empty for guests and unverified users).
 
 **Errors:**
-- 400 — duplicate guess, invalid Pokémon name, game already complete
-- 404 — puzzle not found
-- 409 — `stale_session` (client version mismatch); call `/refresh-state` to re-sync
+- 400 — duplicate guess, invalid Pokémon name, game already complete, not today
+- 401 — no valid user token or guest id
+- 409 — `stale_session` (client version mismatch); reload with `/get-session`
+- 429 — rate limit
 
-**Rate limit:** 10 req/min per user/IP
+**Rate limit:** 10 req/min per player
 
 ---
 
 ### POST /refresh-state
 
-Re-syncs client state with the server after a 409 stale-session error. Does not create a new session.
+Re-syncs a signed-in player's session after a 409. Does not create a session.
 
-**Auth:** Optional
+**Auth:** Required
 
 **Request body**
 ```json
-{
-  "puzzle_date_key": "2026-04-26",
-  "guest_id": "guest-uuid-optional"
-}
+{ "puzzle_date_key": "2026-10-06" }
 ```
 
 **Response 200** — same shape as `/get-session`
-```json
-{
-  "guesses": ["pikachu", "bulbasaur"],
-  "hint_flags": { "ability": true, "generation": false, "type": false },
-  "hints": { "ability": "static" },
-  "completion_state": "playing",
-  "version": 3,
-  "puzzle_metadata": { "name_length": 7 }
-}
-```
-
-**Errors:** 400 (missing params), 404 (session or puzzle not found)
-
-**Rate limit:** 30 req/min per user/IP
 
 ---
 
 ### POST /migrate-guest
 
-Migrates a guest session to an authenticated user account. Only today's session can be migrated. Fails if the user already has a session today.
+Moves today's guest game onto a newly signed-in account (only if the account
+has no session today). Never credits stats.
+
+- Per-user days: the guest's server session is reassigned to the user.
+- Shared-puzzle days: the guest played locally, so `guesses` are replayed
+  against the shared target to compute hints and completion.
 
 **Auth:** Required
 
@@ -243,13 +229,16 @@ Migrates a guest session to an authenticated user account. Only today's session 
 ```json
 {
   "guest_id": "guest-uuid",
-  "puzzle_date_key": "2026-04-26"
+  "puzzle_date_key": "2026-10-06",
+  "guesses": ["shared-puzzle days only"]
 }
 ```
 
-**Response 200** — merged session state (same shape as `/get-session`)
+**Response 200** — session (same shape as `/get-session`) plus `migrated: boolean`
+(`false` when the user already had a session today; that one is returned).
 
-**Errors:** 400 (not today's date, missing fields), 401, 404 (guest session not found), 409 (user already has a session today)
+**Errors:** 400 `{code}` (`missing_fields`, `invalid_guest_id`, `wrong_date`,
+`invalid_guesses`), 401, 404 `{code: 'no_guest_session'}`, 429
 
 **Rate limit:** 5 req/hour per user
 

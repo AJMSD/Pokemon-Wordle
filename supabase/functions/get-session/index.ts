@@ -6,10 +6,8 @@ import { getAuthUser, jwtSubject } from '../_shared/auth.ts';
 import { ensureSessionTarget, resolveTarget, revealedHints, targetColumns } from '../_shared/target.ts';
 import { buildSessionResponse } from '../_shared/sessionResponse.ts';
 import { awardBalls, recordCompletion } from '../_shared/completion.ts';
-
-function getClientIP(req: Request): string {
-  return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
-}
+import { getClientIP, guestSessionAllowed } from '../_shared/guestLimit.ts';
+import { identifyPlayer, ownerOf, rateLimitKey, targetSeed } from '../_shared/player.ts';
 
 Deno.serve(async (req: Request) => {
   const cors = handleCors(req);
@@ -41,28 +39,28 @@ Deno.serve(async (req: Request) => {
       return json({ error: "This puzzle has ended. Refresh for today's Pokémon." }, 400);
     }
 
-    // The token's subject lets the session load start alongside getUser().
-    // Guests play entirely on the client; the server only serves signed-in users.
+    // Signed-in players by token subject (confirmed via getUser below);
+    // guests by the anon key plus their guest_id.
     const authHeader = req.headers.get('Authorization');
-    const userId = jwtSubject(authHeader);
-    if (!userId) {
+    const player = identifyPlayer(jwtSubject(authHeader), url.searchParams.get('guest_id'));
+    if (!player) {
       return json({ error: 'Authorization required' }, 401);
     }
+    const userId = player.kind === 'user' ? player.id : null;
+    const owner = ownerOf(player);
 
     // Rate limit: 30 req/min
-    const rateLimitKey = `get-session:user:${userId}`;
-
     const [user, rateLimit, sessionResult] = await Promise.all([
-      getAuthUser(authHeader),
-      checkRateLimit(supabaseAdmin, rateLimitKey, 30, 60),
+      userId ? getAuthUser(authHeader) : Promise.resolve(null),
+      checkRateLimit(supabaseAdmin, rateLimitKey('get-session', player), 30, 60),
       supabaseAdmin
         .from('daily_sessions')
         .select('*')
-        .match({ user_id: userId, puzzle_date_key })
+        .match({ ...owner, puzzle_date_key })
         .maybeSingle(),
     ]);
 
-    if (user?.id !== userId) {
+    if (userId && user?.id !== userId) {
       return json({ error: 'Invalid or expired token' }, 401);
     }
     const isVerified = !!user?.email_confirmed_at;
@@ -77,16 +75,20 @@ Deno.serve(async (req: Request) => {
 
     let session = sessionResult.data;
     const [, target] = await Promise.all([
-      // Mark any stale sessions as missed
-      markMissedSessions(supabaseAdmin, userId, null, puzzle_date_key, isVerified),
-      resolveTarget(supabaseAdmin, puzzle_date_key, userId, session),
+      // Mark any stale sessions as missed (streaks only exist for users)
+      userId ? markMissedSessions(supabaseAdmin, userId, null, puzzle_date_key, isVerified) : null,
+      resolveTarget(supabaseAdmin, puzzle_date_key, targetSeed(player), session),
     ]);
+
+    if (!session && player.kind === 'guest' && !(await guestSessionAllowed(supabaseAdmin, getClientIP(req)))) {
+      return json({ error: 'Too many new guest games from this network. Sign in to keep playing.' }, 429, { 'Retry-After': '3600' });
+    }
 
     if (!session) {
       const { data: newSession } = await supabaseAdmin
         .from('daily_sessions')
         .insert({
-          user_id: userId,
+          ...owner,
           puzzle_date_key,
           ...targetColumns(target),
           guesses: [],
@@ -102,7 +104,7 @@ Deno.serve(async (req: Request) => {
         ({ data: session } = await supabaseAdmin
           .from('daily_sessions')
           .select('*')
-          .match({ user_id: userId, puzzle_date_key })
+          .match({ ...owner, puzzle_date_key })
           .single());
       }
     } else {
@@ -113,6 +115,7 @@ Deno.serve(async (req: Request) => {
     // earlier. Only sessions the user actually played (guesses present) qualify;
     // recordCompletion is idempotent, so concurrent repairs credit once.
     if (
+      userId &&
       isVerified &&
       (session.completion_state === 'won' || session.completion_state === 'lost') &&
       Array.isArray(session.guesses) && session.guesses.length > 0
@@ -140,7 +143,7 @@ Deno.serve(async (req: Request) => {
 
     const responseBody = buildSessionResponse(session, target, revealedHints(session.hint_flags, target.data));
 
-    console.log(JSON.stringify({ fn: 'get-session', method: req.method, user_id: userId, status: 200, duration_ms: Date.now() - start }));
+    console.log(JSON.stringify({ fn: 'get-session', method: req.method, player: player.kind, user_id: userId, status: 200, duration_ms: Date.now() - start }));
 
     return json(responseBody, 200);
   } catch (err) {

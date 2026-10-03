@@ -1,6 +1,5 @@
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
-  getDailyPokemonId,
   isPerUserDate,
   legacySharedIndex,
 } from '../../../src/logic/dailyTarget.ts';
@@ -102,15 +101,15 @@ async function getLegacyPuzzle(admin: SupabaseClient, dateKey: string): Promise<
 
 /**
  * The Pokémon a session plays against: the target pinned on the session if
- * any, else the seed's per-user pick (from PER_USER_START_DATE) or the shared
- * legacy puzzle (earlier days).
+ * any, else the seed's salted pick (from PER_USER_START_DATE; see
+ * player.ts targetSeed for user vs guest seeds) or the shared legacy puzzle
+ * (earlier days).
  */
 export async function resolveTarget(
   admin: SupabaseClient,
   dateKey: string,
   seedId: string,
-  session?: SessionTargetFields | null,
-  opts: { guest?: boolean } = {}
+  session?: SessionTargetFields | null
 ): Promise<Target> {
   if (session?.target_pokemon_id && session.target_pokemon_name && session.target_pokemon_data) {
     return {
@@ -122,11 +121,8 @@ export async function resolveTarget(
   }
   if (!isPerUserDate(dateKey)) return getLegacyPuzzle(admin, dateKey);
 
-  // Users get a salted (server-secret) pick; guests (migrate-guest only) keep
-  // the public formula the client uses offline.
-  const id = opts.guest
-    ? getDailyPokemonId(dateKey, seedId)
-    : await getSecretDailyPokemonId(dateKey, seedId);
+  // Salted with a server secret, so clients can't compute anyone's answer.
+  const id = await getSecretDailyPokemonId(dateKey, seedId);
   const info = await getPokemonInfo(admin, id);
   return { pokemonId: id, name: info.name, data: info.data, puzzleId: null };
 }

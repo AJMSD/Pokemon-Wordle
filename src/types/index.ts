@@ -72,8 +72,12 @@ export interface GameActions {
   resetError: () => void;
   selectNewPokemon: () => Promise<void>;
   checkForNewDay: (accessToken?: string | null) => void;
-  initializeServerSession: (accessToken: string) => Promise<void>;
-  submitGuessToServer: (guess: string, accessToken: string) => Promise<boolean>;
+  initializeServerSession: (accessToken?: string) => Promise<void>;
+  /** Guests on per-user days: load (or create) their server session. No-op otherwise. */
+  loadGuestServerSession: () => Promise<void>;
+  /** True when guesses are scored by the server (signed in, or a guest on a per-user day). */
+  usesServer: () => boolean;
+  submitGuessToServer: (guess: string, accessToken?: string) => Promise<boolean>;
   invalidateServerSessionSync: () => void;
   hasGuestProgress: () => boolean;
   beginMigrationGate: () => void;
