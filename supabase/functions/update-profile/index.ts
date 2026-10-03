@@ -66,9 +66,9 @@ Deno.serve(async (req: Request) => {
 
     if (avatar_pokemon_id !== undefined) {
       const id = Number(avatar_pokemon_id);
-      if (!Number.isInteger(id) || id < 1 || id > 1010) {
+      if (!Number.isInteger(id) || id < 1 || id > 1025) {
         return new Response(
-          JSON.stringify({ error: 'avatar_pokemon_id must be an integer between 1 and 1010' }),
+          JSON.stringify({ error: 'avatar_pokemon_id must be an integer between 1 and 1025' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }

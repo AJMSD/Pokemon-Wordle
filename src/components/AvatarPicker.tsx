@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useAuthStore } from '../store/authStore'
 import { POKEMON_SPRITE_BASE } from '../lib/sprites'
+import DefaultAvatar from './DefaultAvatar'
 
 interface AvatarPickerProps {
   onClose: () => void
@@ -14,7 +15,8 @@ interface PokemonEntry {
 }
 
 const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
-  const [selected, setSelected] = useState<number | null>(null)
+  // 'red' is the default trainer avatar; numbers are Pokémon ids.
+  const [selected, setSelected] = useState<number | 'red' | null>(null)
   const [isShiny, setIsShiny] = useState(false)
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
@@ -39,9 +41,11 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
       .catch(() => { /* keep fallback */ })
   }, [])
 
-  const filtered = search.trim()
-    ? pokemonMap.filter(p => p.name.includes(search.toLowerCase().trim()))
+  const query = search.toLowerCase().trim()
+  const filtered = query
+    ? pokemonMap.filter(p => p.name.includes(query))
     : pokemonMap
+  const showRed = !query || 'red trainer'.includes(query)
 
   const spriteUrl = (id: number) =>
     isShiny ? `${POKEMON_SPRITE_BASE}/shiny/${id}.png` : `${POKEMON_SPRITE_BASE}/${id}.png`
@@ -49,7 +53,9 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
   async function handleConfirm() {
     if (!selected) return
     setSaving(true)
-    await updateAvatar({ avatar_mode: 'pokemon', avatar_pokemon_id: selected, avatar_is_shiny: isShiny })
+    await updateAvatar(selected === 'red'
+      ? { avatar_mode: 'default' }
+      : { avatar_mode: 'pokemon', avatar_pokemon_id: selected, avatar_is_shiny: isShiny })
     setSaving(false)
     onClose()
   }
@@ -80,7 +86,24 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({ onClose }) => {
         </div>
 
         <div className="grid grid-cols-5 gap-2 mb-4 sm:mb-6 max-h-[min(16rem,40dvh)] overflow-y-auto no-scrollbar">
-          {filtered.length === 0 ? (
+          {showRed && (
+            <button
+              onClick={() => setSelected('red')}
+              aria-pressed={selected === 'red'}
+              className={`border-2 p-1 flex flex-col items-center pixel-focus ${
+                selected === 'red'
+                  ? 'border-pokemon-red bg-red-50'
+                  : 'border-gray-200 hover:border-gray-400'
+              }`}
+              title="Red (default)"
+            >
+              <span className="w-full aspect-square inline-flex [&>svg]:w-full [&>svg]:h-full">
+                <DefaultAvatar size={64} />
+              </span>
+              <span className="text-[9px] text-gray-500 truncate w-full text-center leading-tight mt-0.5">red</span>
+            </button>
+          )}
+          {filtered.length === 0 && !showRed ? (
             <p className="col-span-5 text-center text-sm text-gray-400 py-4">No Pokémon found</p>
           ) : filtered.map(p => (
             <button

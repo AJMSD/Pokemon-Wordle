@@ -92,7 +92,7 @@ Deno.serve(async (req: Request) => {
     if (insertError) {
       const isUnique = insertError.code === '23505' || insertError.message?.includes('unique');
       if (isUnique) {
-        return new Response(JSON.stringify({ error: 'Username already taken' }), {
+        return new Response(JSON.stringify({ error: 'That Trainer name is already taken' }), {
           status: 409,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });

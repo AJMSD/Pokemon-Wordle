@@ -6,12 +6,13 @@ import GuessList from './GuessList'
 import useToast from '../hooks/useToast'
 import useGame from '../hooks/useGame'
 import { ballSpriteUrl } from '../lib/sprites'
+import { litLightCount } from '../logic/pokedexLights'
 
 const PokedexUI: React.FC = () => {
   const [currentGuess, setCurrentGuess] = useState('')
   const {
     makeGuess, submitGuessToServer, error, resetError,
-    dailyPokemon, gameStatus, checkForNewDay,
+    dailyPokemon, gameStatus, checkForNewDay, guesses,
     staleLock, rateLimitUntil, rejectedGuess,
     clearStaleLock, clearRejectedGuess, clearRateLimitLock,
   } = useGameStore()
@@ -31,6 +32,12 @@ const PokedexUI: React.FC = () => {
   const suggestionsRef = useRef<HTMLDivElement>(null)
   const suggestionItemsRef = useRef<Array<HTMLDivElement | null>>([])
   
+  // Easter egg: the small lights glow as more of the name's letters are found.
+  const litLights = useMemo(
+    () => litLightCount(guesses, dailyPokemon?.name ?? '', gameStatus === 'won'),
+    [guesses, dailyPokemon?.name, gameStatus]
+  )
+
   // Get matching suggestions based on current input - use useMemo to prevent recreation
   const suggestions = useMemo(() => 
     currentGuess.length > 0 ? getSuggestions(currentGuess) : [],
@@ -251,10 +258,10 @@ const PokedexUI: React.FC = () => {
         <div className="left-panel-top">
           <div className="blue-light"></div>
           <div className="left-panel-controls">
-            <div className="small-lights-container">
-              <div className="small-light red"></div>
-              <div className="small-light yellow"></div>
-              <div className="small-light green"></div>
+            <div className="small-lights-container" aria-hidden="true">
+              {(['red', 'yellow', 'green'] as const).map((color, i) => (
+                <div key={color} className={`small-light ${color}${i < litLights ? ' lit' : ''}`}></div>
+              ))}
             </div>
           </div>
         </div>

@@ -4,32 +4,36 @@ interface DefaultAvatarProps {
   size?: number
 }
 
-// 16x16 pixel trainer. Each character is one pixel; '.' is background.
+// 16x16 head-and-shoulders of Red, the Kanto trainer, in a Game Boy Color
+// palette. Each character is one pixel; '.' is background.
 const PIXELS = [
   '................',
-  '.....RRRRRR.....',
-  '....RRRWWRRR....',
-  '....RRRRRRRR....',
-  '...RRRRRRRRRRR..',
-  '....HSSSSSSH....',
-  '....SSKSSKSS....',
-  '....SSSSSSSS....',
-  '.....SSSSSS.....',
-  '......SSSS......',
-  '....RRRWWRRR....',
-  '...RRRRWWRRRR...',
-  '...RRRRWWRRRR...',
-  '...RRRRWWRRRR...',
-  '...RRRRRRRRRR...',
-  '................',
+  '.....KKKKKK.....',
+  '....KRWWWWRK....',
+  '...KRWWWWWWRK...',
+  '...KRRWWWWRRK...',
+  '..KKRRRRRRRRKK..',
+  '.KRRRRRRRRRRRRK.',
+  '..KHHKKKKKKHHK..',
+  '..KHSSSSSSSSHK..',
+  '...KSKSSSSKSK...',
+  '...KSKSSSSKSK...',
+  '....KSSPPSSK....',
+  '..KKWKKSSKKWKK..',
+  '.KWWRRRKKRRRWWK.',
+  '.KWWRRRKKRRRWWK.',
+  'KWWWRRRKKRRRWWWK',
 ]
 
+const BACKGROUND = '#fae2d6'
+
 const COLORS: Record<string, string> = {
-  R: '#cc0000',
-  W: '#ffffff',
-  S: '#e8c49a',
-  K: '#1a1a2e',
-  H: '#4a2c17',
+  K: '#181010', // outline, shirt
+  R: '#d81818', // cap, jacket
+  W: '#f8f8f8', // cap front, sleeves
+  S: '#f8c8a0', // skin
+  H: '#382828', // hair
+  P: '#e88878', // mouth
 }
 
 // Merge horizontal runs of the same colour into single rects.
@@ -54,9 +58,9 @@ const DefaultAvatar: React.FC<DefaultAvatarProps> = ({ size = 64 }) => {
       xmlns="http://www.w3.org/2000/svg"
       shapeRendering="crispEdges"
       role="img"
-      aria-label="Default trainer avatar"
+      aria-label="Default trainer avatar (Red)"
     >
-      <rect width="16" height="16" fill="#1a1a2e" />
+      <rect width="16" height="16" fill={BACKGROUND} />
       {RUNS.map(run => (
         <rect key={`${run.x}-${run.y}`} x={run.x} y={run.y} width={run.w} height={1} fill={run.fill} />
       ))}

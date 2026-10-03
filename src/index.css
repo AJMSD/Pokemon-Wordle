@@ -282,9 +282,29 @@
   clip-path: var(--pixel-circle);
 }
 
-.small-light.red { --light-color: #FF0000; }
-.small-light.yellow { --light-color: #FFDE00; }
-.small-light.green { --light-color: #32CB65; }
+.small-light.red { --light-color: #FF0000; --light-glow: #FF9A9A; }
+.small-light.yellow { --light-color: #FFDE00; --light-glow: #FFF6A8; }
+.small-light.green { --light-color: #32CB65; --light-glow: #A8FFC6; }
+
+/* Small lights sit dim until the player finds 25% / 50% / 75% of the name's
+   letters (see logic/pokedexLights.ts); then they glow: white pixel ring and
+   a hard colour swap, matching the blue light. */
+.small-light:not(.lit)::before {
+  filter: brightness(0.45) saturate(0.6);
+}
+
+.small-light.lit {
+  background-color: #fff;
+}
+
+.small-light.lit::before {
+  animation: smallLightGlow 1.2s steps(1, end) infinite;
+}
+
+@keyframes smallLightGlow {
+  0%, 100% { background-color: var(--light-color); }
+  50% { background-color: var(--light-glow); }
+}
 
 .main-screen-container {
   padding: 15px;
@@ -1005,8 +1025,6 @@ header h1 {
   .win-animate, .ball-burst-animate, .guess-shake {
     animation: none;
   }
-  .blue-light,
-  .blue-light::before,
   .pokemon-image,
   .hint-new,
   .sound-hole,

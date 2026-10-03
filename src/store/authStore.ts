@@ -214,6 +214,38 @@ function setSignedOutFlag() {
   }
 }
 
+// Session hydration can run twice at boot; share one create per user.
+const signupProfileInFlight = new Map<string, Promise<Profile | null>>();
+
+// Creates the profile from the Trainer name given at signup; null if that
+// fails (e.g. the name was taken meanwhile), which falls back to the setup modal.
+function createProfileFromSignupName(accessToken: string, userId: string, username: string): Promise<Profile | null> {
+  const existing = signupProfileInFlight.get(userId);
+  if (existing) return existing;
+
+  const request = (async () => {
+    try {
+      await fetch(`${import.meta.env.VITE_API_URL as string}/functions/v1/create-profile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+        body: JSON.stringify({ username }),
+      });
+    } catch {
+      // Fall through: the profile may still exist (e.g. another tab created it).
+    }
+    try {
+      const { data } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+      return (data as Profile | null) ?? null;
+    } catch {
+      return null;
+    }
+  })();
+
+  signupProfileInFlight.set(userId, request);
+  void request.finally(() => signupProfileInFlight.delete(userId));
+  return request;
+}
+
 function clearSignedOutFlag() {
   removeCacheKey(SIGNED_OUT_FLAG_KEY);
 }
@@ -359,6 +391,13 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
               throw error;
             }
             profile = data ?? null;
+            // Email-confirmed signups have no session at signup time, so the
+            // Trainer name chosen there waits in user_metadata. Use it rather
+            // than asking again; the setup modal remains the fallback.
+            const signupName = session.user.user_metadata?.username;
+            if (!profile && typeof signupName === 'string' && signupName.trim()) {
+              profile = await createProfileFromSignupName(session.access_token, session.user.id, signupName.trim());
+            }
           }
 
           if (authSessionEpoch !== sessionEpoch) {

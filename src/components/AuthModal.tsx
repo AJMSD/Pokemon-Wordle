@@ -229,7 +229,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
       content: (
         <form onSubmit={handleSignup} className="space-y-4">
           <div>
-            <label htmlFor="signup-username" className="block text-xs text-gray-700 mb-1">Username</label>
+            <label htmlFor="signup-username" className="block text-xs text-gray-700 mb-1">Trainer name</label>
             <input id="signup-username" type="text" className={inputCls} value={username} onChange={e => setUsername(e.target.value)} required minLength={3} maxLength={20} autoFocus placeholder="3–20 characters" />
           </div>
           <div>
@@ -322,7 +322,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialView = 'l
         <form onSubmit={handleUsernameSetup} className="space-y-4">
           <p className="text-sm text-gray-600">One last step — pick your Trainer name to complete registration.</p>
           <div>
-            <label htmlFor="setup-username" className="block text-xs text-gray-700 mb-1">Username</label>
+            <label htmlFor="setup-username" className="block text-xs text-gray-700 mb-1">Trainer name</label>
             <input id="setup-username" type="text" className={inputCls} value={username} onChange={e => setUsername(e.target.value)} required minLength={3} maxLength={20} autoFocus placeholder="3–20 characters" />
           </div>
           {error && <p className="text-red-600 text-xs">{error}</p>}
