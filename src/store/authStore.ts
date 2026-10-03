@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { clearSupabaseAuthStorage, readPersistedSessionUserId, supabase } from '../lib/supabase';
 import { isJsonEqual, removeCacheKey, removeCacheKeysByPrefix } from '../lib/cache';
 import { migrateLegacyUserCache, readProfileCache, writeCachedAvatar, writeProfileCache } from '../lib/profileCache';
-import { useGameStore } from './gameStore';
+import { useGameStore, setAccessTokenProvider } from './gameStore';
 import type { AuthChangeEvent, User, Session } from '../lib/supabase';
 import type { AvatarConfig } from '../utils/avatarUtils';
 
@@ -246,6 +246,20 @@ function createProfileFromSignupName(accessToken: string, userId: string, userna
   return request;
 }
 
+// A profile created in the last few minutes belongs to a brand-new account.
+const FRESH_PROFILE_WINDOW_MS = 15 * 60 * 1000;
+function isFreshProfile(profile: Profile): boolean {
+  const createdAt = Date.parse(String((profile as { created_at?: unknown }).created_at ?? ''));
+  return Number.isFinite(createdAt) && Date.now() - createdAt < FRESH_PROFILE_WINDOW_MS;
+}
+
+/** True when the game session may start loading before auth hydration finishes. */
+export function canPrefetchGameSession(userId: string): boolean {
+  return !wasExplicitlySignedOut()
+    && !getRecoveryContextFromUrl().isRecovery
+    && !isRecoveryRequiredForUser(userId);
+}
+
 function clearSignedOutFlag() {
   removeCacheKey(SIGNED_OUT_FLAG_KEY);
 }
@@ -348,6 +362,12 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         const sessionEpoch = ++authSessionEpoch;
         const gameStore = useGameStore.getState();
         gameStore.setStorageScope(session.user.id);
+        // A guest who just signed up brings today's guesses along: hold the
+        // server session load until they are imported (or we give up).
+        const mayMigrateGuest = !forcePasswordRecovery
+          && !isRecoveryRequiredForUser(session.user.id)
+          && gameStore.hasGuestProgress();
+        if (mayMigrateGuest) gameStore.beginMigrationGate();
         let cachedProfile: Profile | null = null;
         let cachedStats: Stats | null = null;
         if (forcePasswordRecovery) {
@@ -381,6 +401,7 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
           }
 
           let profile: Profile | null = null;
+          let profileJustCreated = false;
           if (!isRecoverySession) {
             const { data, error } = await supabase
               .from('profiles')
@@ -397,6 +418,12 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
             const signupName = session.user.user_metadata?.username;
             if (!profile && typeof signupName === 'string' && signupName.trim()) {
               profile = await createProfileFromSignupName(session.access_token, session.user.id, signupName.trim());
+              profileJustCreated = profile !== null;
+            }
+            // Only a brand-new account imports the guest game; a returning
+            // player keeps their own session.
+            if (mayMigrateGuest && profile && (profileJustCreated || isFreshProfile(profile))) {
+              await gameStore.migrateGuestProgress(session.access_token);
             }
           }
 
@@ -443,6 +470,8 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
               isProfileHydrating: false,
             };
           });
+        } finally {
+          if (mayMigrateGuest) gameStore.endMigrationGate();
         }
       };
 
@@ -617,7 +646,8 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         },
         body: JSON.stringify({ username }),
       });
-      const data = await res.json();
+      // A gateway error page isn't JSON; don't let that throw to the caller.
+      const data = await res.json().catch(() => ({} as { error?: string }));
       if (!res.ok) return { error: data.error ?? "Couldn't register your Trainer Card. Try again." };
     }
 
@@ -1037,6 +1067,10 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       if (!profile) {
         return { error: "Couldn't load your Trainer profile yet. Please try again." };
       }
+      // Fallback signup path (name picked in the setup modal): import the
+      // guest game now, then reload the server session.
+      const game = useGameStore.getState();
+      if (game.hasGuestProgress()) await game.migrateGuestProgress(session.access_token);
       return { error: null };
     } catch {
       return { error: "Couldn't save your Trainer name. Try again." };
@@ -1055,6 +1089,9 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     set({ cachedAvatar: { src, dataUrl } });
   },
 }));
+
+// Queued guesses read the token when they are sent, not when they were typed.
+setAccessTokenProvider(() => useAuthStore.getState().session?.access_token ?? null);
 
 export { useAuthStore };
 export type { Profile, Stats, BootProfile, CachedAvatar };

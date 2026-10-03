@@ -12,6 +12,14 @@ export function getJSTDateKey(): string {
   return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
+const DAY_MS = 24 * 3600 * 1000;
+
+// Milliseconds until the next JST midnight (the daily puzzle rollover).
+export function msUntilNextJstMidnight(now: number = Date.now()): number {
+  const jst = now + 9 * 3600 * 1000;
+  return (Math.floor(jst / DAY_MS) + 1) * DAY_MS - jst;
+}
+
 // Fetches detailed information for a specific Pokémon
 export const fetchPokemonDetails = async (idOrName: number | string): Promise<Pokemon> => {
   try {
@@ -28,6 +36,7 @@ export const fetchPokemonDetails = async (idOrName: number | string): Promise<Po
 export const fetchPokemonSpecies = async (url: string): Promise<PokemonSpecies> => {
   try {
     const response = await fetch(url);
+    if (!response.ok) throw new Error(`PokéAPI ${response.status}`);
     return await response.json();
   } catch (error) {
     console.error('Error fetching Pokémon species:', error);

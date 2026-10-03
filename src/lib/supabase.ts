@@ -47,6 +47,36 @@ export function readPersistedSessionUserId(): string | null {
   }
 }
 
+/**
+ * Synchronously reads a still-valid access token for a confirmed user from
+ * supabase-js's persisted session, so the game session can start loading
+ * before auth hydration finishes. Null when absent, expired or unconfirmed.
+ */
+export function readPersistedAccessToken(): { userId: string; accessToken: string } | null {
+  if (typeof window === 'undefined') return null;
+  const projectRef = getSupabaseProjectRefFromUrl(safeSupabaseUrl);
+  if (!projectRef) return null;
+  try {
+    const raw = localStorage.getItem(getSupabaseAuthStorageKeys(projectRef)[0]);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as {
+      access_token?: unknown;
+      expires_at?: unknown;
+      user?: { id?: unknown; email_confirmed_at?: unknown };
+    } | null;
+    const token = parsed?.access_token;
+    const userId = parsed?.user?.id;
+    const expiresAt = parsed?.expires_at;
+    if (typeof token !== 'string' || !token || typeof userId !== 'string' || !userId) return null;
+    if (!parsed?.user?.email_confirmed_at) return null;
+    // Leave a margin so we never fire with a token about to lapse.
+    if (typeof expiresAt !== 'number' || expiresAt * 1000 < Date.now() + 30_000) return null;
+    return { userId, accessToken: token };
+  } catch {
+    return null;
+  }
+}
+
 export function clearSupabaseAuthStorage() {
   if (typeof window === 'undefined') return;
 

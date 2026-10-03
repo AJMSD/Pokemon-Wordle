@@ -34,6 +34,8 @@ export interface PokemonSpecies {
   };
 }
 
+export type LetterResult = 'correct' | 'present' | 'absent';
+
 export interface Hint {
   type: 'ability' | 'generation' | 'type';
   value: string | string[];
@@ -44,6 +46,10 @@ export interface GameState {
   dailyPokemon: Pokemon | null;
   pokemonList: string[];
   guesses: string[];
+  // Per-letter colours aligned with `guesses`; a guess without an entry is still pending.
+  guessResults: LetterResult[][];
+  // Letters in the answer; known before the answer itself is for signed-in play.
+  nameLength: number | null;
   hints: Hint[];
   gameStatus: 'playing' | 'won' | 'lost';
   isLoading: boolean;
@@ -65,10 +71,14 @@ export interface GameActions {
   revealHint: (attemptNumber: number) => Promise<void>;
   resetError: () => void;
   selectNewPokemon: () => Promise<void>;
-  checkForNewDay: () => void;
+  checkForNewDay: (accessToken?: string | null) => void;
   initializeServerSession: (accessToken: string) => Promise<void>;
   submitGuessToServer: (guess: string, accessToken: string) => Promise<boolean>;
   invalidateServerSessionSync: () => void;
+  hasGuestProgress: () => boolean;
+  beginMigrationGate: () => void;
+  endMigrationGate: () => void;
+  migrateGuestProgress: (accessToken: string) => Promise<boolean>;
   setStorageScope: (userId?: string | null) => void;
   clearScopedProgress: (userId?: string | null) => void;
   clearRateLimitLock: () => void;

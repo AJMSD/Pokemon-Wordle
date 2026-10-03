@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
+  fetchPokemonSpecies,
+  msUntilNextJstMidnight,
   normalizePokemonName,
   isCorrectGuess,
   isValidPokemonName,
@@ -115,5 +117,24 @@ describe('getLetterMatchResult', () => {
   it('returns empty array for empty inputs', () => {
     expect(getLetterMatchResult('', 'cat')).toEqual([])
     expect(getLetterMatchResult('cat', '')).toEqual([])
+  })
+})
+
+describe('msUntilNextJstMidnight', () => {
+  it('counts down to 00:00 JST (15:00 UTC)', () => {
+    // 14:00 UTC is 23:00 JST: one hour to go.
+    expect(msUntilNextJstMidnight(Date.UTC(2026, 9, 5, 14, 0, 0))).toBe(3600 * 1000)
+    // Exactly at midnight JST a full day remains.
+    expect(msUntilNextJstMidnight(Date.UTC(2026, 9, 5, 15, 0, 0))).toBe(24 * 3600 * 1000)
+  })
+})
+
+describe('fetchPokemonSpecies', () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
+
+  it('throws on a non-OK response instead of parsing the error body', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503, json: async () => ({}) }))
+    await expect(fetchPokemonSpecies('https://pokeapi.co/x')).rejects.toThrow(/503/)
   })
 })
