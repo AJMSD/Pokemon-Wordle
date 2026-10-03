@@ -134,29 +134,6 @@ Returns the full list of balls and which ones the user has unlocked.
 
 ---
 
-### GET /get-daily-puzzle
-
-Returns today's puzzle metadata (never reveals the answer).
-
-**Auth:** Not required
-
-**Response 200**
-```json
-{
-  "puzzle_date_key": "2026-04-26",
-  "pokemon_name_length": 7,
-  "hints_schema": {
-    "ability": { "revealed_after_guess": 3 },
-    "generation": { "revealed_after_guess": 6 },
-    "type": { "revealed_after_guess": 9 }
-  }
-}
-```
-
-**Errors:** 500 (PokeAPI unreachable)
-
----
-
 ### GET /get-session
 
 Loads (or creates) the current daily session for a user or guest.

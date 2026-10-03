@@ -67,9 +67,6 @@ try {
   const profile = await call(`${api}/functions/v1/create-profile`, { method: 'POST', token, body: { username: `e2e${stamp}`.slice(0, 15) } });
   check('create-profile', profile.status === 200 || profile.status === 201, `status ${profile.status}`);
 
-  const puzzle = await call(`${api}/functions/v1/get-daily-puzzle`, { token });
-  check('get-daily-puzzle', puzzle.status === 200 && puzzle.json?.puzzle_date_key === today, `key ${puzzle.json?.puzzle_date_key}`);
-
   const session = await call(`${api}/functions/v1/get-session?puzzle_date_key=${today}`, { token });
   check('get-session', session.status === 200, `status ${session.status}`);
 

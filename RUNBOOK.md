@@ -126,3 +126,65 @@ node scripts/loadtest.mjs guess 20 15
 docker compose exec -T db psql -U supabase_admin -d postgres -c \
   "delete from daily_sessions where guest_id like 'loadtest-%'; delete from rate_limits where key like '%:ip:%';"
 ```
+
+---
+
+## Key rotation
+
+`ANON_KEY` and `SERVICE_ROLE_KEY` are long-lived JWTs (expiry ~2036) signed with
+`JWT_SECRET`, so they cannot be revoked individually. To rotate:
+
+1. `node selfhost/scripts/gen-keys.mjs` to generate a new `JWT_SECRET`,
+   `ANON_KEY` and `SERVICE_ROLE_KEY`; put them in `selfhost/.env`.
+2. `docker compose up -d` (recreates auth, rest, functions) and let the next
+   deploy rebuild the frontend (the anon key is baked in at build time; use
+   `selfhost/scripts/deploy.sh --force` to rebuild now).
+3. All existing user sessions are invalidated; players sign in again.
+
+**Rotating `JWT_SECRET` also changes every player's daily target Pokemon**,
+because the per-user target is salted with it. To rotate the secret without
+reshuffling targets, first pin the current value: set `TARGET_SALT` in
+`selfhost/.env` to the OLD `JWT_SECRET` (or any fixed string used since the
+per-user start date), then rotate. `TARGET_SALT`, when set, overrides the
+JWT-derived salt. Never change `TARGET_SALT` mid-game for the same reason.
+
+Rotate `POSTGRES_PASSWORD` by `ALTER ROLE ... PASSWORD` for postgres,
+authenticator, supabase_auth_admin etc., then update `.env` and `up -d`.
+
+## Deploy script notes
+
+- `.env` is parsed as plain `KEY=VALUE` lines (never sourced), so special
+  characters in passwords are safe. Use no inline comments after values.
+- Order: pull, `npm ci` (lockfile changed), migrations, `compose up -d`, nginx
+  reload (`nginx -t` first), functions restart, frontend build.
+- If a step fails, the checkout is reset to the previous commit and the next
+  cron run retries. Check `deploy.log`.
+- Once a day the script runs `select public.cleanup_stale_rows();` (stale
+  rate-limit and guest rows); stamp in `selfhost/.cleanup-stamp`. Failures are
+  logged as `cleanup_stale_rows failed (ignored)` and retried on the next run.
+- The build needs Node 20.19+ or 22.12+ (Vite 8); tests need Node 22.12+.
+
+## Cloudflare tunnel (cloudflared)
+
+TLS is terminated by Cloudflare, so there is no certificate to renew on the
+server. `cloudflared` is not part of docker compose: it runs as the
+`cloudflared-ajmsd-ops` systemd service (`Restart=always`, enabled at boot),
+config in `/etc/cloudflared/config.yml` mapping `wurmple.ajmsd.space` to
+`http://127.0.0.1:54380` and `wurmple-api.ajmsd.space` to
+`http://127.0.0.1:54321`.
+
+```bash
+systemctl status cloudflared-ajmsd-ops
+sudo systemctl restart cloudflared-ajmsd-ops
+journalctl -u cloudflared-ajmsd-ops -n 50
+```
+
+The gateway trusts `CF-Connecting-IP`, which is safe only because the compose
+ports bind to 127.0.0.1; never publish them on another interface.
+
+## Security headers
+
+The site server (`selfhost/nginx/security-headers.inc`) sets HSTS, CSP,
+nosniff, X-Frame-Options, Referrer-Policy and Permissions-Policy. If the app
+starts using a new third-party origin (fonts, images, API), add it to the CSP
+there or the browser will block it.

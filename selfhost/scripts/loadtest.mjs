@@ -1,6 +1,6 @@
 // Small load generator for capacity checks against the local gateway.
 // Usage: node loadtest.mjs <endpoint> <concurrency> <seconds>
-//   endpoint: puzzle | session | guess | health
+//   endpoint: session | guess | health
 // PACE_MS=<ms> sleeps between requests per worker (stay under per-IP limits
 // when measuring latency through the public gateway).
 // Guest sessions it creates use guest_id 'loadtest-*'; clean them up with
@@ -8,7 +8,7 @@
 //   delete from rate_limits where key like '%:ip:%';
 import { randomUUID } from 'node:crypto';
 
-const [endpoint = 'puzzle', concurrency = '10', seconds = '10'] = process.argv.slice(2);
+const [endpoint = 'session', concurrency = '10', seconds = '10'] = process.argv.slice(2);
 const base = process.env.BASE ?? 'http://127.0.0.1:54321/functions/v1';
 const anon = process.env.ANON_KEY;
 const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
@@ -20,7 +20,6 @@ const randomIp = () => Array.from({ length: 4 }, () => Math.floor(Math.random() 
 
 const requests = {
   health: () => fetch(`${base}/health`),
-  puzzle: () => fetch(`${base}/get-daily-puzzle`, { headers }),
   // One fixed guest so repeated reads hit the same session row.
   session: () =>
     fetch(`${base}/get-session?puzzle_date_key=${today}&guest_id=loadtest-session`, { headers }),
