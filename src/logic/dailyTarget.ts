@@ -69,7 +69,7 @@ export function affinePick(dateKey: string, aSeed: number, bSeed: number): numbe
 /**
  * National dex id (1-based) for `seedId` on `dateKey` using the PUBLIC seed
  * formula. Only for guests: signed-in users' targets are derived server-side
- * with a secret (supabase/functions/_shared/secretTarget.ts).
+ * with a secret (server/shared/secretTarget.ts).
  */
 export function getDailyPokemonId(dateKey: string, seedId: string): number {
   if (!isPerUserDate(dateKey)) return legacySharedIndex(dateKey) + 1;

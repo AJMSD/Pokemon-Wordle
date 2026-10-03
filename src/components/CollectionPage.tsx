@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useAuthStore, BALL_NAMES } from '../store/authStore'
 import { isJsonEqual, readJsonCache, writeJsonCache } from '../lib/cache'
+import { apiUrl, bearer } from '../lib/api'
 import { ballSpriteUrl } from '../lib/sprites'
 import { BALLS_CACHE_PREFIX } from '../lib/profileCache'
 import { TIER_THRESHOLDS, getStreakTier, nextTier } from '../logic/tierLogic'
@@ -128,10 +129,7 @@ const CollectionPage: React.FC = () => {
 
     const fetchId = latestFetchIdRef.current + 1
     latestFetchIdRef.current = fetchId
-    const supabaseUrl = import.meta.env.VITE_API_URL as string
-    fetch(`${supabaseUrl}/functions/v1/get-balls`, {
-      headers: { 'Authorization': `Bearer ${session.access_token}` },
-    })
+    fetch(apiUrl('/v1/get-balls'), { headers: bearer(session.access_token) })
       .then(async r => {
         if (!r.ok) {
           throw new Error(`get-balls failed with status ${r.status}`)

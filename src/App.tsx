@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useGameStore } from './store/gameStore'
 import { useAuthStore, BALL_NAMES, canPrefetchGameSession } from './store/authStore'
-import { readPersistedAccessToken } from './lib/supabase'
+import { readPersistedAccessToken } from './lib/api'
 import { getJSTDateKey } from './utils/pokemonUtils'
 import useDayRollover from './hooks/useDayRollover'
 import Header from './components/Header'
@@ -91,6 +91,8 @@ function App() {
   const hasResolvedProfile = useAuthStore(state => state.hasResolvedProfile)
   const isProfileHydrating = useAuthStore(state => state.isProfileHydrating)
   const stats = useAuthStore(state => state.stats)
+  const authNotice = useAuthStore(state => state.authNotice)
+  const clearAuthNotice = useAuthStore(state => state.clearAuthNotice)
 
   const { toasts, removeToast, addToast } = useToast()
   const [showCollection, setShowCollection] = useState(false)
@@ -149,6 +151,12 @@ function App() {
       lastSyncedToken.current = null
     }
   }, [isGuest])
+
+  useEffect(() => {
+    if (!authNotice) return
+    addToast(authNotice, 'error', 6000)
+    clearAuthNotice()
+  }, [authNotice, addToast, clearAuthNotice])
 
   useEffect(() => {
     if (newlyUnlockedBalls.length > 0) {

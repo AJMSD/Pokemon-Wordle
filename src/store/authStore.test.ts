@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from './authStore'
 import { useGameStore } from './gameStore'
-import { supabase } from '../lib/supabase'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -108,33 +107,68 @@ describe('authStore display ball sync', () => {
   })
 })
 
-describe('authStore stats hydration', () => {
-  const session = { access_token: 'token-1', user: { id: 'user-1' } } as any
-  const profile = {
-    id: 'user-1',
-    username: 'Ash',
-    avatar_config: {},
-    display_ball: 'poke-ball',
-  }
+const API = 'https://api.example.test'
+const USER = { id: 'user-1', email: 'ash@example.com', email_confirmed_at: '2026-10-01T00:00:00.000Z' }
+const PROFILE = { id: 'user-1', username: 'Ash', avatar_config: {}, display_ball: 'poke-ball', tier_prompt_dismissed_forever: false, created_at: '2020-01-01T00:00:00.000Z' }
+const STATS = { current_streak: 3, max_streak: 5, total_participations: 10, total_wins: 7, win_rate: 0.7, avg_guesses: 4, participation_streak: 3, max_participation_streak: 6, total_losses: 3, guess_distribution: {}, best_guess_summary: null }
 
+type Reply = { status: number; body?: unknown }
+type Route = (init: RequestInit | undefined) => Reply | Promise<Reply>
+
+/** fetch stub keyed by API path; records every call. */
+function mockApi(routes: Record<string, Route>) {
+  const calls: Array<{ path: string; init?: RequestInit }> = []
+  const fetchMock = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+    const path = String(url).replace(API, '').split('?')[0]
+    calls.push({ path, init })
+    const route = routes[path]
+    if (!route) return { ok: true, status: 200, json: async () => ({}) }
+    const { status, body } = await route(init)
+    return { ok: status >= 200 && status < 300, status, json: async () => body ?? {} }
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  return calls
+}
+
+const meRoute: Route = () => ({ status: 200, body: { user: USER, profile: PROFILE, stats: STATS } })
+const authHeader = (init?: RequestInit) => (init?.headers as Record<string, string> | undefined)?.Authorization
+
+function resetAuthState() {
+  useAuthStore.setState({
+    user: null,
+    session: null,
+    profile: null,
+    stats: null,
+    hasResolvedProfile: false,
+    isProfileHydrating: false,
+    isLoading: true,
+    isGuest: true,
+    pendingPasswordRecovery: false,
+    pendingEmail: null,
+    bootProfile: null,
+    cachedAvatar: null,
+    authNotice: null,
+  })
+}
+
+function stubGame() {
+  const game = useGameStore.getState()
+  vi.spyOn(game, 'initializeGame').mockResolvedValue(undefined as any)
+  vi.spyOn(game, 'loadGuestServerSession').mockResolvedValue(undefined as any)
+  vi.spyOn(game, 'hasGuestProgress').mockReturnValue(false)
+}
+
+function storeSession(token = 'tok-1') {
+  localStorage.setItem('wurmple_auth', JSON.stringify({ token, user: USER }))
+}
+
+describe('authStore session lifecycle', () => {
   beforeEach(() => {
-    vi.stubEnv('VITE_API_URL', 'https://api.example.test')
+    vi.stubEnv('VITE_API_URL', API)
     localStorage.clear()
-    useAuthStore.setState({
-      user: null,
-      session: null,
-      profile: null,
-      stats: null,
-      displayBallSync: {
-        inFlight: false,
-        pendingBallId: null,
-        requestId: 0,
-      },
-      isLoading: false,
-      isGuest: true,
-      pendingPasswordRecovery: false,
-      pendingEmail: null,
-    })
+    window.history.replaceState({}, '', '/')
+    resetAuthState()
+    stubGame()
   })
 
   afterEach(() => {
@@ -143,347 +177,214 @@ describe('authStore stats hydration', () => {
     vi.restoreAllMocks()
   })
 
-  it('hydrates stats during initialize when a session already exists', async () => {
-    const authAny = supabase.auth as any
-    authAny.getSession = vi.fn().mockResolvedValue({ data: { session } })
-    authAny.onAuthStateChange = vi.fn()
-    ;(supabase as any).from = vi.fn().mockReturnValue({
-      select: () => ({
-        eq: () => ({
-          maybeSingle: async () => ({ data: profile }),
-        }),
-      }),
-    })
-
-    const fetchMock = vi.fn().mockResolvedValue({
-      status: 200,
-      ok: true,
-      json: async () => ({
-        profile,
-        stats: { current_streak: 7 },
-      }),
-    })
-    vi.stubGlobal('fetch', fetchMock)
+  it('restores the stored session and hydrates profile and stats from get-me', async () => {
+    storeSession()
+    const calls = mockApi({ '/v1/get-me': meRoute })
 
     await useAuthStore.getState().initialize()
 
-    await vi.waitFor(() => {
-      expect(useAuthStore.getState().stats?.current_streak).toBe(7)
-    })
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const state = useAuthStore.getState()
+    expect(state.isGuest).toBe(false)
+    expect(state.session?.access_token).toBe('tok-1')
+    expect(state.profile?.username).toBe('Ash')
+    expect(state.stats?.current_streak).toBe(3)
+    expect(state.hasResolvedProfile).toBe(true)
+    expect(authHeader(calls[0].init)).toBe('Bearer tok-1')
+    expect(JSON.parse(localStorage.getItem('wurmple_profile_cache:user-1') ?? '{}').stats?.current_streak).toBe(3)
   })
 
-  it('hydrates stats after auth state change without needing profile page', async () => {
-    const authAny = supabase.auth as any
-    let authCallback: any = null
-
-    authAny.getSession = vi.fn().mockResolvedValue({ data: { session: null } })
-    authAny.onAuthStateChange = vi.fn((cb: any) => {
-      authCallback = cb
-      return { data: { subscription: { unsubscribe: vi.fn() } } }
-    })
-    ;(supabase as any).from = vi.fn().mockReturnValue({
-      select: () => ({
-        eq: () => ({
-          maybeSingle: async () => ({ data: profile }),
-        }),
-      }),
-    })
-
-    const fetchMock = vi.fn().mockResolvedValue({
-      status: 200,
-      ok: true,
-      json: async () => ({
-        profile,
-        stats: { current_streak: 4 },
-      }),
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
+  it('stays a guest without a stored session and keeps the profile cache', async () => {
+    localStorage.setItem('wurmple_profile_cache:user-1', JSON.stringify({ profile: PROFILE, stats: null, updatedAt: 1 }))
+    const calls = mockApi({})
     await useAuthStore.getState().initialize()
-    if (!authCallback) {
-      throw new Error('Expected auth state callback to be registered')
-    }
-    await authCallback('SIGNED_IN', session)
-
-    await vi.waitFor(() => {
-      expect(useAuthStore.getState().stats?.current_streak).toBe(4)
-    })
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(useAuthStore.getState().isGuest).toBe(true)
+    expect(useAuthStore.getState().isLoading).toBe(false)
+    expect(calls).toHaveLength(0)
+    expect(localStorage.getItem('wurmple_profile_cache:user-1')).not.toBeNull()
   })
 
-  it('returns from the auth callback without awaiting supabase calls (avoids auth lock deadlock)', async () => {
-    const authAny = supabase.auth as any
-    let authCallback: any = null
-    authAny.getSession = vi.fn().mockResolvedValue({ data: { session: null } })
-    authAny.onAuthStateChange = vi.fn((cb: any) => {
-      authCallback = cb
-      return { data: { subscription: { unsubscribe: vi.fn() } } }
-    })
-    const fromMock = vi.fn().mockReturnValue({
-      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: profile }) }) }),
-    })
-    ;(supabase as any).from = fromMock
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 200, ok: true, json: async () => ({ profile, stats: null }) }))
-
+  it('drops a revoked stored session back to guest', async () => {
+    storeSession('dead')
+    mockApi({ '/v1/get-me': () => ({ status: 401, body: { error: 'Invalid token' } }) })
     await useAuthStore.getState().initialize()
-    expect(authCallback('SIGNED_IN', session)).toBeUndefined()
-    expect(fromMock).not.toHaveBeenCalled()
+    expect(useAuthStore.getState().isGuest).toBe(true)
+    expect(localStorage.getItem('wurmple_auth')).toBeNull()
+  })
 
-    await vi.waitFor(() => {
-      expect(useAuthStore.getState().profile?.username).toBe('Ash')
+  it('signs in with email and password and stores the token', async () => {
+    const calls = mockApi({
+      '/v1/auth/login': () => ({ status: 200, body: { token: 'tok-2', user: USER } }),
+      '/v1/get-me': meRoute,
     })
+    const result = await useAuthStore.getState().signIn('ash@example.com', 'pikachu123')
+    expect(result.error).toBeNull()
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ email: 'ash@example.com', password: 'pikachu123' })
+    expect(useAuthStore.getState().profile?.username).toBe('Ash')
+    expect(JSON.parse(localStorage.getItem('wurmple_auth') ?? '{}').token).toBe('tok-2')
+  })
+
+  it('reports unconfirmed email on sign-in and remembers it for resend', async () => {
+    const calls = mockApi({
+      '/v1/auth/login': () => ({ status: 403, body: { error: 'Email not confirmed', code: 'email_not_verified' } }),
+      '/v1/auth/resend': () => ({ status: 200, body: { ok: true } }),
+    })
+    const result = await useAuthStore.getState().signIn('ash@example.com', 'pikachu123')
+    expect(result.error).toMatch(/confirm your email/i)
+    expect(useAuthStore.getState().isGuest).toBe(true)
+    expect((await useAuthStore.getState().resendVerification()).error).toBeNull()
+    expect(JSON.parse(String(calls[1].init?.body))).toEqual({ email: 'ash@example.com' })
+  })
+
+  it('discards a sign-in that finishes after the modal timed out', async () => {
+    let release!: (v: Reply) => void
+    const calls = mockApi({
+      '/v1/auth/login': () => new Promise<Reply>(r => { release = r }),
+      '/v1/auth/logout': () => ({ status: 200 }),
+    })
+    const pending = useAuthStore.getState().signIn('ash@example.com', 'pikachu123')
+    await Promise.resolve()
+    await useAuthStore.getState().markSignInTimedOut()
+    release({ status: 200, body: { token: 'late', user: USER } })
+    await pending
+    await new Promise(r => setTimeout(r, 0))
+    expect(useAuthStore.getState().isGuest).toBe(true)
+    expect(localStorage.getItem('wurmple_auth')).toBeNull()
+    // The late token is revoked on the server.
+    const logout = calls.find(c => c.path === '/v1/auth/logout')
+    expect(authHeader(logout?.init)).toBe('Bearer late')
+  })
+
+  it('signs up without creating a session and remembers the email', async () => {
+    const calls = mockApi({ '/v1/auth/signup': () => ({ status: 200, body: { ok: true } }) })
+    const result = await useAuthStore.getState().signUp('new@example.com', 'longenough', 'Misty')
+    expect(result.error).toBeNull()
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ email: 'new@example.com', password: 'longenough', username: 'Misty' })
+    expect(useAuthStore.getState().pendingEmail).toBe('new@example.com')
+    expect(useAuthStore.getState().isGuest).toBe(true)
+  })
+
+  it('passes signup errors through', async () => {
+    mockApi({ '/v1/auth/signup': () => ({ status: 409, body: { error: 'That Trainer name is already taken' } }) })
+    expect((await useAuthStore.getState().signUp('a@b.co', 'longenough', 'Ash')).error).toBe('That Trainer name is already taken')
+  })
+
+  it('signs in from a ?verify= link and strips it from the URL', async () => {
+    window.history.replaceState({}, '', '/?verify=verify-token-123&x=1')
+    const calls = mockApi({
+      '/v1/auth/verify': () => ({ status: 200, body: { token: 'tok-v', user: USER } }),
+      '/v1/get-me': meRoute,
+    })
+    await useAuthStore.getState().initialize()
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ token: 'verify-token-123' })
+    expect(useAuthStore.getState().session?.access_token).toBe('tok-v')
+    expect(window.location.search).toBe('?x=1')
+  })
+
+  it('shows a notice for an expired ?verify= link', async () => {
+    window.history.replaceState({}, '', '/?verify=old')
+    mockApi({ '/v1/auth/verify': () => ({ status: 400, body: { code: 'invalid_token' } }) })
+    await useAuthStore.getState().initialize()
+    expect(useAuthStore.getState().isGuest).toBe(true)
+    expect(useAuthStore.getState().authNotice).toMatch(/invalid or has expired/)
+  })
+
+  it('completes Google sign-in from a ?login= code', async () => {
+    window.history.replaceState({}, '', '/?login=one-time-code')
+    const calls = mockApi({
+      '/v1/auth/google/exchange': () => ({ status: 200, body: { token: 'tok-g', user: USER } }),
+      '/v1/get-me': () => ({ status: 200, body: { user: USER, profile: null, stats: STATS } }),
+    })
+    await useAuthStore.getState().initialize()
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ token: 'one-time-code' })
+    const state = useAuthStore.getState()
+    expect(state.session?.access_token).toBe('tok-g')
+    // No Trainer name yet: the setup modal takes over.
+    expect(state.profile).toBeNull()
+    expect(state.hasResolvedProfile).toBe(true)
+    expect(window.location.search).toBe('')
+  })
+
+  it('shows a notice when Google sign-in fails', async () => {
+    window.history.replaceState({}, '', '/?auth_error=google')
+    mockApi({})
+    await useAuthStore.getState().initialize()
+    expect(useAuthStore.getState().authNotice).toMatch(/Google/)
+  })
+
+  it('starts Google sign-in at the API with the site origin', async () => {
+    const assign = vi.fn()
+    vi.spyOn(window, 'location', 'get').mockReturnValue({ origin: 'http://localhost:5173', assign } as any)
+    await useAuthStore.getState().signInWithGoogle()
+    expect(assign).toHaveBeenCalledWith(`${API}/v1/auth/google/start?origin=${encodeURIComponent('http://localhost:5173')}`)
+  })
+
+  it('resets the password from a ?reset= link and signs in', async () => {
+    window.history.replaceState({}, '', '/?reset=reset-token-1')
+    const calls = mockApi({
+      '/v1/auth/reset': () => ({ status: 200, body: { token: 'tok-r', user: USER } }),
+      '/v1/get-me': meRoute,
+    })
+    await useAuthStore.getState().initialize()
+    expect(useAuthStore.getState().pendingPasswordRecovery).toBe(true)
+    expect(useAuthStore.getState().isGuest).toBe(true)
+
+    const result = await useAuthStore.getState().confirmPasswordReset('new-password')
+    expect(result.error).toBeNull()
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ token: 'reset-token-1', password: 'new-password' })
+    expect(useAuthStore.getState().pendingPasswordRecovery).toBe(false)
+    expect(useAuthStore.getState().session?.access_token).toBe('tok-r')
+  })
+
+  it('surfaces an expired reset link', async () => {
+    window.history.replaceState({}, '', '/?reset=expired')
+    mockApi({ '/v1/auth/reset': () => ({ status: 400, body: { error: 'Password reset link is invalid or expired.' } }) })
+    await useAuthStore.getState().initialize()
+    expect((await useAuthStore.getState().confirmPasswordReset('new-password')).error).toMatch(/invalid or expired/)
   })
 
   it('dedupes concurrent fetchMe requests for the same session token', async () => {
-    useAuthStore.setState({
-      user: { id: 'user-1' } as any,
-      session,
-      profile,
-      stats: null,
-      isGuest: false,
-    })
-
-    const fetchDeferred = deferred<any>()
-    const fetchMock = vi.fn().mockImplementation(() => fetchDeferred.promise)
-    vi.stubGlobal('fetch', fetchMock)
-
-    const first = useAuthStore.getState().fetchMe()
-    const second = useAuthStore.getState().fetchMe()
-
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-
-    fetchDeferred.resolve({
-      status: 200,
-      ok: true,
-      json: async () => ({
-        profile,
-        stats: { current_streak: 9 },
-      }),
-    })
-
-    const [firstResult, secondResult] = await Promise.all([first, second])
-    expect(firstResult.error).toBeNull()
-    expect(secondResult.error).toBeNull()
-    expect(useAuthStore.getState().stats?.current_streak).toBe(9)
-  })
-})
-
-describe('authStore cache lifecycle', () => {
-  beforeEach(() => {
-    vi.stubEnv('VITE_API_URL', 'https://api.example.test')
-    localStorage.clear()
-  })
-
-  afterEach(() => {
-    vi.unstubAllGlobals()
-    vi.unstubAllEnvs()
-    vi.restoreAllMocks()
-  })
-
-  it('retains cached user cache when initialize runs without a session', async () => {
-    localStorage.setItem('wurmple_profile_cache:stale-user', JSON.stringify({
-      profile: { username: 'Stale' },
-      stats: { current_streak: 99 },
-    }))
-
-    const authAny = supabase.auth as any
-    authAny.getSession = vi.fn().mockResolvedValue({ data: { session: null } })
-    authAny.onAuthStateChange = vi.fn(() => ({
-      data: { subscription: { unsubscribe: vi.fn() } },
-    }))
-
+    storeSession()
+    mockApi({ '/v1/get-me': meRoute })
     await useAuthStore.getState().initialize()
-
-    expect(localStorage.getItem('wurmple_profile_cache:stale-user')).not.toBeNull()
+    const calls = mockApi({ '/v1/get-me': meRoute })
+    await Promise.all([useAuthStore.getState().fetchMe(), useAuthStore.getState().fetchMe()])
+    expect(calls).toHaveLength(1)
   })
 
-  it('writes updated profile cache after avatar update', async () => {
-    useAuthStore.setState({
-      user: { id: 'user-1' } as any,
-      session: { access_token: 'token-1', user: { id: 'user-1' } } as any,
-      profile: {
-        id: 'user-1',
-        username: 'Ash',
-        avatar_config: { avatar_pokemon_id: 1, avatar_is_shiny: false },
-        display_ball: 'poke-ball',
-      },
-      stats: { current_streak: 5 } as any,
-      isGuest: false,
-      isLoading: false,
-    } as any)
-
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        avatar_config: { avatar_pokemon_id: 25, avatar_is_shiny: true },
-      }),
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    const result = await useAuthStore.getState().updateAvatar({
-      avatar_pokemon_id: 25,
-      avatar_is_shiny: true,
-    })
-
-    expect(result.error).toBeNull()
-    const cached = JSON.parse(localStorage.getItem('wurmple_profile_cache:user-1') ?? '{}')
-    expect(cached.profile?.avatar_config?.avatar_pokemon_id).toBe(25)
-    expect(cached.profile?.avatar_config?.avatar_is_shiny).toBe(true)
+  it('creates the profile from the setup modal and reloads it', async () => {
+    storeSession()
+    mockApi({ '/v1/get-me': () => ({ status: 200, body: { user: USER, profile: null, stats: STATS } }) })
+    await useAuthStore.getState().initialize()
+    const calls = mockApi({ '/v1/create-profile': () => ({ status: 200, body: { ok: true } }), '/v1/get-me': meRoute })
+    expect((await useAuthStore.getState().setupUsername('Ash')).error).toBeNull()
+    expect(calls.map(c => c.path)).toEqual(['/v1/create-profile', '/v1/get-me'])
+    expect(useAuthStore.getState().profile?.username).toBe('Ash')
   })
 
-  it('keeps the per-user profile cache but clears session state on explicit sign-out', async () => {
-    localStorage.setItem('wurmple_profile_cache:user-1', JSON.stringify({
-      profile: { username: 'Ash' },
-      stats: { current_streak: 7 },
-    }))
-    localStorage.setItem('wurmple_balls_cache:user-1', JSON.stringify({ balls: [] }))
-    localStorage.setItem('wurmple_recovery_pending_user_id', 'user-1')
-
-    useAuthStore.setState({
-      user: { id: 'user-1' } as any,
-      session: { access_token: 'token-1', user: { id: 'user-1' } } as any,
-      profile: {
-        id: 'user-1',
-        username: 'Ash',
-        avatar_config: {},
-        display_ball: 'poke-ball',
-      },
-      stats: null,
-      isGuest: false,
-      isLoading: false,
-    } as any)
-    useGameStore.setState({
-      guesses: ['pikachu', 'bulbasaur'],
-      gameStatus: 'won',
-      sessionVersion: 3,
-      puzzleDateKey: '2026-04-28',
-      staleLock: true,
-      rejectedGuess: 'pikachu',
-    } as any)
-
-    const authAny = supabase.auth as any
-    authAny.signOut = vi.fn().mockResolvedValue(undefined)
+  it('signs out: revokes the token, clears the session, keeps the profile cache', async () => {
+    storeSession()
+    mockApi({ '/v1/get-me': meRoute })
+    await useAuthStore.getState().initialize()
+    const calls = mockApi({ '/v1/auth/logout': () => ({ status: 200 }) })
 
     await useAuthStore.getState().signOut()
 
+    const state = useAuthStore.getState()
+    expect(state.isGuest).toBe(true)
+    expect(state.session).toBeNull()
+    expect(state.profile).toBeNull()
+    expect(localStorage.getItem('wurmple_auth')).toBeNull()
     expect(localStorage.getItem('wurmple_profile_cache:user-1')).not.toBeNull()
-    expect(localStorage.getItem('wurmple_balls_cache:user-1')).not.toBeNull()
-    expect(localStorage.getItem('wurmple_recovery_pending_user_id')).toBeNull()
-    expect(localStorage.getItem('wurmple_signed_out')).toBe('1')
-    expect(useAuthStore.getState().bootProfile).toBeNull()
-    const gameState = useGameStore.getState()
-    expect(gameState.guesses).toEqual([])
-    expect(gameState.gameStatus).toBe('playing')
-    expect(gameState.sessionVersion).toBeNull()
-    expect(gameState.puzzleDateKey).toBeNull()
-    expect(gameState.staleLock).toBe(false)
-    expect(gameState.rejectedGuess).toBeNull()
-  })
-})
-
-describe('authStore sign-in timeout safety', () => {
-  beforeEach(() => {
-    vi.stubEnv('VITE_API_URL', 'https://api.example.test')
-    localStorage.clear()
-    useAuthStore.setState({
-      user: null,
-      session: null,
-      profile: null,
-      stats: null,
-      displayBallSync: {
-        inFlight: false,
-        pendingBallId: null,
-        requestId: 0,
-      },
-      isLoading: false,
-      isGuest: true,
-      pendingPasswordRecovery: false,
-      pendingEmail: null,
-    } as any)
+    expect(authHeader(calls[0].init)).toBe('Bearer tok-1')
   })
 
-  afterEach(() => {
-    vi.unstubAllGlobals()
-    vi.unstubAllEnvs()
-    vi.restoreAllMocks()
-  })
-
-  it('keeps guest state when timed-out sign-in later emits SIGNED_IN', async () => {
-    const authAny = supabase.auth as any
-    let authCallback: any = null
-    const signInDeferred = deferred<any>()
-
-    authAny.getSession = vi.fn().mockResolvedValue({ data: { session: null } })
-    authAny.onAuthStateChange = vi.fn((cb: any) => {
-      authCallback = cb
-      return { data: { subscription: { unsubscribe: vi.fn() } } }
-    })
-    authAny.signInWithPassword = vi.fn().mockImplementation(() => signInDeferred.promise)
-    authAny.signOut = vi.fn().mockResolvedValue(undefined)
-
+  it('writes updated profile cache after avatar update', async () => {
+    storeSession()
+    mockApi({ '/v1/get-me': meRoute })
     await useAuthStore.getState().initialize()
-    const signInPromise = useAuthStore.getState().signIn('ash@kanto.com', 'password123')
-    await useAuthStore.getState().markSignInTimedOut()
-
-    signInDeferred.resolve({ error: null })
-    await signInPromise
-    await authCallback('SIGNED_IN', { access_token: 'token-late', user: { id: 'user-1' } })
-
-    await vi.waitFor(() => {
-      const state = useAuthStore.getState()
-      expect(state.isGuest).toBe(true)
-      expect(state.session).toBeNull()
-      expect(state.profile).toBeNull()
-      expect(state.stats).toBeNull()
-    })
-  })
-
-  it('still hydrates profile and stats for successful non-timed-out sign-in', async () => {
-    const authAny = supabase.auth as any
-    let authCallback: any = null
-    const session = { access_token: 'token-ok', user: { id: 'user-1' } } as any
-    const profile = {
-      id: 'user-1',
-      username: 'Ash',
-      avatar_config: {},
-      display_ball: 'poke-ball',
-    }
-
-    authAny.getSession = vi.fn().mockResolvedValue({ data: { session: null } })
-    authAny.onAuthStateChange = vi.fn((cb: any) => {
-      authCallback = cb
-      return { data: { subscription: { unsubscribe: vi.fn() } } }
-    })
-    authAny.signInWithPassword = vi.fn().mockResolvedValue({ error: null })
-
-    ;(supabase as any).from = vi.fn().mockReturnValue({
-      select: () => ({
-        eq: () => ({
-          maybeSingle: async () => ({ data: profile, error: null }),
-        }),
-      }),
-    })
-
-    const fetchMock = vi.fn().mockResolvedValue({
-      status: 200,
-      ok: true,
-      json: async () => ({
-        profile,
-        stats: { current_streak: 5 },
-      }),
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    await useAuthStore.getState().initialize()
-    const signInResult = await useAuthStore.getState().signIn('ash@kanto.com', 'password123')
-    expect(signInResult.error).toBeNull()
-    await authCallback('SIGNED_IN', session)
-
-    await vi.waitFor(() => {
-      expect(useAuthStore.getState().isGuest).toBe(false)
-      expect(useAuthStore.getState().profile?.username).toBe('Ash')
-      expect(useAuthStore.getState().stats?.current_streak).toBe(5)
-    })
+    mockApi({ '/v1/update-profile': () => ({ status: 200, body: { avatar_config: { avatar_mode: 'pokemon', avatar_pokemon_id: 25 } } }) })
+    expect((await useAuthStore.getState().updateAvatar({ avatar_mode: 'pokemon', avatar_pokemon_id: 25 })).error).toBeNull()
+    const cached = JSON.parse(localStorage.getItem('wurmple_profile_cache:user-1') ?? '{}')
+    expect(cached.profile.avatar_config.avatar_pokemon_id).toBe(25)
   })
 })

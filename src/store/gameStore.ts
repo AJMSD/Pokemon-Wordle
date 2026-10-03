@@ -11,6 +11,7 @@ import {
 } from '../utils/pokemonUtils';
 import { generationForId, getDailyPokemonId, isPerUserDate } from '../logic/dailyTarget';
 import { POKEMON_NAMES } from '../data/pokemonNames';
+import { apiUrl, bearer } from '../lib/api';
 
 type GameStorageScope = 'guest' | `user:${string}`;
 
@@ -141,11 +142,10 @@ function currentToken(fallback?: string): string {
   return accessTokenProvider?.() || fallback || '';
 }
 
-// Signed-in players send their access token; guests send the anon key and
-// identify themselves with their guest id.
+// Signed-in players send their access token; guests send no Authorization
+// and identify themselves with their guest id.
 function authHeaders(accessToken?: string): Record<string, string> {
-  const token = isUserScope() ? currentToken(accessToken) : (import.meta.env.VITE_API_ANON_KEY as string);
-  return { Authorization: `Bearer ${token}` };
+  return isUserScope() ? bearer(currentToken(accessToken)) : {};
 }
 
 function guestIdForRequest(): string | undefined {
@@ -617,7 +617,6 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
 
   initializeServerSession: async (accessToken) => {
     const requestEpoch = serverSyncEpoch;
-    const base = import.meta.env.VITE_API_URL as string;
     const puzzleDateKey = getJSTDateKey();
 
     const load = (async () => {
@@ -628,7 +627,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
         const guestId = guestIdForRequest();
         const query = `puzzle_date_key=${puzzleDateKey}${guestId ? `&guest_id=${encodeURIComponent(guestId)}` : ''}`;
         const sessRes = await fetch(
-          `${base}/functions/v1/get-session?${query}`,
+          apiUrl(`/v1/get-session?${query}`),
           { headers: authHeaders(accessToken) }
         );
         if (requestEpoch !== serverSyncEpoch) return;
@@ -658,7 +657,6 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
     const requestEpoch = serverSyncEpoch;
     const generation = submitGeneration;
     const { guesses, pokemonList, gameStatus } = get();
-    const base = import.meta.env.VITE_API_URL as string;
 
     if (gameStatus !== 'playing' || guesses.length >= MAX_GUESSES) return false;
 
@@ -706,7 +704,7 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
       }
 
       try {
-        const resp = await fetch(`${base}/functions/v1/submit-guess`, {
+        const resp = await fetch(apiUrl('/v1/submit-guess'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...authHeaders(accessToken) },
           body: JSON.stringify({
@@ -811,12 +809,11 @@ const useGameStore = create<GameState & GameActions>((set, get) => ({
     if (!progress || !guestId) return false;
 
     const requestEpoch = serverSyncEpoch;
-    const base = import.meta.env.VITE_API_URL as string;
     const puzzleDateKey = getJSTDateKey();
     try {
-      const resp = await fetch(`${base}/functions/v1/migrate-guest`, {
+      const resp = await fetch(apiUrl('/v1/migrate-guest'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${currentToken(accessToken)}` },
+        headers: { 'Content-Type': 'application/json', ...bearer(currentToken(accessToken)) },
         body: JSON.stringify({ puzzle_date_key: puzzleDateKey, guest_id: guestId, guesses: progress.guesses }),
       });
       if (requestEpoch !== serverSyncEpoch || !resp.ok) return false;

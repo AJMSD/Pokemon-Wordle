@@ -6,6 +6,7 @@ import {
   writeProfileCache,
 } from './profileCache'
 import { readBootProfile } from '../store/authStore'
+import { clearStoredSession, writeStoredSession } from './api'
 
 const profile = (id: string) => ({
   id,
@@ -84,8 +85,7 @@ describe('readBootProfile', () => {
   })
 
   function persistSession(userId: string) {
-    const host = new URL(import.meta.env.VITE_API_URL || 'https://api.placeholder.invalid').hostname
-    localStorage.setItem(`sb-${host.split('.')[0]}-auth-token`, JSON.stringify({ access_token: 'x', user: { id: userId } }))
+    writeStoredSession({ access_token: 'x', user: { id: userId, email: `${userId}@example.com`, email_confirmed_at: null } })
   }
 
   it('returns cached display data for the persisted session user', () => {
@@ -98,10 +98,10 @@ describe('readBootProfile', () => {
     expect(boot?.stats?.current_streak).toBe(2)
   })
 
-  it('returns null after an explicit sign-out', () => {
+  it('returns null after sign-out clears the session', () => {
     writeProfileCache('u1', profile('u1'), null)
     persistSession('u1')
-    localStorage.setItem('wurmple_signed_out', '1')
+    clearStoredSession()
     expect(readBootProfile()).toBeNull()
   })
 

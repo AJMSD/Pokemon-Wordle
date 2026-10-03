@@ -1,9 +1,17 @@
 import { create } from 'zustand';
-import { clearSupabaseAuthStorage, readPersistedSessionUserId, supabase } from '../lib/supabase';
+import {
+  apiUrl,
+  bearer,
+  clearStoredSession,
+  readBody,
+  readPersistedSessionUserId,
+  readStoredSession,
+  writeStoredSession,
+} from '../lib/api';
 import { isJsonEqual, removeCacheKey, removeCacheKeysByPrefix } from '../lib/cache';
 import { migrateLegacyUserCache, readProfileCache, writeCachedAvatar, writeProfileCache } from '../lib/profileCache';
 import { useGameStore, setAccessTokenProvider } from './gameStore';
-import type { AuthChangeEvent, User, Session } from '../lib/supabase';
+import type { Session, User } from '../lib/api';
 import type { AvatarConfig } from '../utils/avatarUtils';
 
 export const BALL_NAMES: Record<string, string> = {
@@ -24,6 +32,7 @@ interface Profile {
   avatar_config: AvatarConfig;
   display_ball: string;
   tier_prompt_dismissed_forever?: boolean;
+  created_at?: string;
 }
 
 interface Stats {
@@ -71,6 +80,8 @@ interface AuthState {
   pendingEmail: string | null;
   bootProfile: BootProfile | null;
   cachedAvatar: CachedAvatar | null;
+  /** One-off message for the player (e.g. an expired email link); App shows it as a toast. */
+  authNotice: string | null;
 }
 
 interface AuthActions {
@@ -89,57 +100,66 @@ interface AuthActions {
   dismissTierPromptForever: () => Promise<{ error: string | null }>;
   setupUsername: (username: string) => Promise<{ error: string | null }>;
   clearPasswordRecovery: () => void;
+  clearAuthNotice: () => void;
   cacheAvatar: (src: string, dataUrl: string) => void;
+}
+
+interface MeResponse {
+  user: User;
+  profile: Profile | null;
+  stats: Stats | null;
 }
 
 let fetchMeInFlight: { token: string; promise: Promise<{ error: string | null }> } | null = null;
 let passwordResetInFlight: Promise<{ error: string | null }> | null = null;
 let authInitInFlight: Promise<void> | null = null;
-let authListenerUnsubscribe: (() => void) | null = null;
-let authEventQueue: Promise<void> = Promise.resolve();
 let authSessionEpoch = 0;
 let signInAttemptCounter = 0;
 let lastStartedSignInAttemptId: number | null = null;
 let timedOutSignInAttemptId: number | null = null;
-let isSigningOut = false;
-const RECOVERY_PENDING_USER_KEY = 'wurmple_recovery_pending_user_id';
-const SIGNED_OUT_FLAG_KEY = 'wurmple_signed_out';
+// Token from a ?reset= link, held until the new password is submitted.
+let pendingResetToken: string | null = null;
+
 // The per-user profile and balls caches are kept on sign-out (LRU, public display data only).
 const APP_STORAGE_KEYS_TO_CLEAR_ON_SIGNOUT = [
-  RECOVERY_PENDING_USER_KEY,
   'wurmple_avatar_pokemon_list',
   'tier_prompt_dismissed',
+  // Left by the previous auth client.
+  'wurmple_recovery_pending_user_id',
+  'wurmple_signed_out',
 ] as const;
 const APP_STORAGE_PREFIXES_TO_CLEAR_ON_SIGNOUT = [
   'pokemon_list_cache_',
   'pokemon_detail_cache_',
 ] as const;
 
-function readRecoveryPendingUserId() {
-  if (typeof window === 'undefined') return null;
-  try {
-    return localStorage.getItem(RECOVERY_PENDING_USER_KEY);
-  } catch {
-    return null;
-  }
+// Query params the API's emails and Google redirect bring the player back with.
+const AUTH_URL_PARAMS = ['verify', 'reset', 'login', 'auth_error'] as const;
+type AuthUrlParams = Partial<Record<(typeof AUTH_URL_PARAMS)[number], string>>;
+
+function readAuthUrlParams(): AuthUrlParams {
+  if (typeof window === 'undefined') return {};
+  const search = new URLSearchParams(window.location.search);
+  const params: AuthUrlParams = {};
+  AUTH_URL_PARAMS.forEach(key => {
+    const value = search.get(key);
+    if (value) params[key] = value;
+  });
+  return params;
 }
 
-function markRecoveryRequiredForUser(userId: string) {
+/** Removes one-time auth params so a reload or shared URL can't replay them. */
+function clearAuthUrlParams() {
   if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(RECOVERY_PENDING_USER_KEY, userId);
-  } catch {
-    // Ignore storage write failures (quota/private mode)
-  }
+  const url = new URL(window.location.href);
+  AUTH_URL_PARAMS.forEach(key => url.searchParams.delete(key));
+  window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
 }
 
-function clearRecoveryRequirement() {
-  removeCacheKey(RECOVERY_PENDING_USER_KEY);
-}
-
-function isRecoveryRequiredForUser(userId: string) {
-  return readRecoveryPendingUserId() === userId;
-}
+const AUTH_ERROR_NOTICES: Record<string, string> = {
+  google: "Google sign-in didn't work. Please try again.",
+  google_disabled: "Google sign-in isn't available right now.",
+};
 
 async function resetToFreshGuestGameState(logLabel: string) {
   const gameStore = useGameStore.getState();
@@ -154,46 +174,6 @@ async function resetToFreshGuestGameState(logLabel: string) {
   }
 }
 
-function getRecoveryContextFromUrl() {
-  if (typeof window === 'undefined') return { isRecovery: false, hasAuthToken: false };
-
-  const hash = window.location.hash.startsWith('#')
-    ? window.location.hash.slice(1)
-    : window.location.hash;
-  const hashParams = new URLSearchParams(hash);
-  const searchParams = new URLSearchParams(window.location.search);
-
-  const type = hashParams.get('type') ?? searchParams.get('type');
-  const hasAuthToken = Boolean(
-    hashParams.get('access_token')
-    || hashParams.get('refresh_token')
-    || searchParams.get('access_token')
-    || searchParams.get('refresh_token'),
-  );
-
-  return {
-    isRecovery: type === 'recovery',
-    hasAuthToken,
-  };
-}
-
-function clearRecoveryUrlParams() {
-  if (typeof window === 'undefined') return;
-
-  const url = new URL(window.location.href);
-  const searchKeys = ['type', 'access_token', 'refresh_token', 'expires_in', 'token_type', 'recovery'];
-  searchKeys.forEach(key => url.searchParams.delete(key));
-
-  const hash = window.location.hash.startsWith('#')
-    ? window.location.hash.slice(1)
-    : window.location.hash;
-  const hashParams = new URLSearchParams(hash);
-  searchKeys.forEach(key => hashParams.delete(key));
-  url.hash = hashParams.toString();
-
-  window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
-}
-
 function readCachedAvatar(userId: string): CachedAvatar | null {
   const entry = readProfileCache(userId);
   return entry?.avatarSrc && entry.avatarDataUrl
@@ -206,72 +186,43 @@ function clearAppStorageOnSignOut() {
   removeCacheKeysByPrefix([...APP_STORAGE_PREFIXES_TO_CLEAR_ON_SIGNOUT]);
 }
 
-function setSignedOutFlag() {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(SIGNED_OUT_FLAG_KEY, '1');
-  } catch {
-    // Ignore storage write failures
-  }
+async function postJson(path: string, body: unknown, token?: string): Promise<Response> {
+  return fetch(apiUrl(path), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? bearer(token) : {}) },
+    body: JSON.stringify(body),
+  });
 }
 
-// Session hydration can run twice at boot; share one create per user.
-const signupProfileInFlight = new Map<string, Promise<Profile | null>>();
+/** Reads a {token, user} auth response into a session, or null. */
+async function sessionFrom(res: Response): Promise<Session | null> {
+  if (!res.ok) return null;
+  const data = await readBody<{ token: string; user: User }>(res);
+  return typeof data.token === 'string' && data.user ? { access_token: data.token, user: data.user } : null;
+}
 
-// Creates the profile from the Trainer name given at signup; null if that
-// fails (e.g. the name was taken meanwhile), which falls back to the setup modal.
-function createProfileFromSignupName(accessToken: string, userId: string, username: string): Promise<Profile | null> {
-  const existing = signupProfileInFlight.get(userId);
-  if (existing) return existing;
+async function loadMe(token: string): Promise<{ status: number; data: MeResponse | null }> {
+  const res = await fetch(apiUrl('/v1/get-me'), { headers: bearer(token) });
+  if (!res.ok) return { status: res.status, data: null };
+  return { status: res.status, data: await res.json() as MeResponse };
+}
 
-  const request = (async () => {
-    try {
-      await fetch(`${import.meta.env.VITE_API_URL as string}/functions/v1/create-profile`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
-        body: JSON.stringify({ username }),
-      });
-    } catch {
-      // Fall through: the profile may still exist (e.g. another tab created it).
-    }
-    try {
-      const { data } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
-      return (data as Profile | null) ?? null;
-    } catch {
-      return null;
-    }
-  })();
-
-  signupProfileInFlight.set(userId, request);
-  void request.finally(() => signupProfileInFlight.delete(userId));
-  return request;
+function revokeToken(token: string) {
+  void postJson('/v1/auth/logout', {}, token).catch(() => {});
 }
 
 // A profile created in the last few minutes belongs to a brand-new account.
 const FRESH_PROFILE_WINDOW_MS = 15 * 60 * 1000;
 function isFreshProfile(profile: Profile): boolean {
-  const createdAt = Date.parse(String((profile as { created_at?: unknown }).created_at ?? ''));
+  const createdAt = Date.parse(String(profile.created_at ?? ''));
   return Number.isFinite(createdAt) && Date.now() - createdAt < FRESH_PROFILE_WINDOW_MS;
 }
 
 /** True when the game session may start loading before auth hydration finishes. */
-export function canPrefetchGameSession(userId: string): boolean {
-  return !wasExplicitlySignedOut()
-    && !getRecoveryContextFromUrl().isRecovery
-    && !isRecoveryRequiredForUser(userId);
-}
-
-function clearSignedOutFlag() {
-  removeCacheKey(SIGNED_OUT_FLAG_KEY);
-}
-
-function wasExplicitlySignedOut() {
-  if (typeof window === 'undefined') return false;
-  try {
-    return localStorage.getItem(SIGNED_OUT_FLAG_KEY) === '1';
-  } catch {
-    return false;
-  }
+export function canPrefetchGameSession(_userId: string): boolean {
+  // A reset or sign-in link is about to replace the session.
+  const params = readAuthUrlParams();
+  return !params.reset && !params.verify && !params.login;
 }
 
 function writeUserCacheFromState(
@@ -286,7 +237,6 @@ function writeUserCacheFromState(
 /** Synchronously builds the boot profile from the persisted session and the profile cache. */
 export function readBootProfile(): BootProfile | null {
   migrateLegacyUserCache();
-  if (wasExplicitlySignedOut()) return null;
   const userId = readPersistedSessionUserId();
   if (!userId) return null;
   const entry = readProfileCache(userId);
@@ -332,622 +282,468 @@ function getGuestAuthState(): Pick<
   };
 }
 
-const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
-  user: null,
-  session: null,
-  profile: null,
-  stats: null,
-  hasResolvedProfile: false,
-  isProfileHydrating: false,
-  displayBallSync: {
-    inFlight: false,
-    pendingBallId: null,
-    requestId: 0,
-  },
-  isLoading: true,
-  isGuest: true,
-  pendingPasswordRecovery: false,
-  pendingEmail: null,
-  bootProfile: initialBootProfile,
-  cachedAvatar: initialBootProfile?.avatar ?? null,
+const useAuthStore = create<AuthState & AuthActions>((set, get) => {
+  /** Adopts a session: persists it, then loads the profile and stats. */
+  const applySession = async (session: Session) => {
+    const sessionEpoch = ++authSessionEpoch;
+    writeStoredSession(session);
+    const gameStore = useGameStore.getState();
+    gameStore.setStorageScope(session.user.id);
+    // A guest who just signed up brings today's guesses along: hold the
+    // server session load until they are imported (or we give up).
+    const mayMigrateGuest = gameStore.hasGuestProgress();
+    if (mayMigrateGuest) gameStore.beginMigrationGate();
 
-  initialize: async () => {
-    if (authInitInFlight) {
-      return authInitInFlight;
-    }
+    // Cached profile/stats for instant display while get-me runs.
+    const cached = readProfileCache(session.user.id);
+    const cachedProfile = cached?.profile ?? null;
+    const cachedStats = cached?.stats ?? null;
 
-    authInitInFlight = (async () => {
-      set({ isLoading: true });
-
-      const applySession = async (session: Session, forcePasswordRecovery: boolean) => {
-        const sessionEpoch = ++authSessionEpoch;
-        const gameStore = useGameStore.getState();
-        gameStore.setStorageScope(session.user.id);
-        // A guest who just signed up brings today's guesses along: hold the
-        // server session load until they are imported (or we give up).
-        const mayMigrateGuest = !forcePasswordRecovery
-          && !isRecoveryRequiredForUser(session.user.id)
-          && gameStore.hasGuestProgress();
-        if (mayMigrateGuest) gameStore.beginMigrationGate();
-        let cachedProfile: Profile | null = null;
-        let cachedStats: Stats | null = null;
-        if (forcePasswordRecovery) {
-          markRecoveryRequiredForUser(session.user.id);
-        }
-        const persistentlyRequired = isRecoveryRequiredForUser(session.user.id);
-        const isRecoverySession = forcePasswordRecovery || persistentlyRequired;
-
-        set(state => ({
-          user: session.user,
-          session,
-          isGuest: false,
-          isLoading: false,
-          pendingEmail: null,
-          pendingPasswordRecovery: isRecoverySession || state.pendingPasswordRecovery,
-          hasResolvedProfile: isRecoverySession,
-          isProfileHydrating: !isRecoverySession,
-          bootProfile: null,
-          cachedAvatar: readCachedAvatar(session.user.id),
-        }));
-
-        try {
-          // Apply cached profile/stats immediately for instant display
-          const cachedData = readProfileCache(session.user.id);
-          if (cachedData) {
-            cachedProfile = cachedData.profile ?? null;
-            cachedStats = cachedData.stats ?? null;
-            if (authSessionEpoch === sessionEpoch) {
-              set({ profile: cachedProfile, stats: cachedStats });
-            }
-          }
-
-          let profile: Profile | null = null;
-          let profileJustCreated = false;
-          if (!isRecoverySession) {
-            const { data, error } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', session.user.id)
-              .maybeSingle();
-            if (error) {
-              throw error;
-            }
-            profile = data ?? null;
-            // Email-confirmed signups have no session at signup time, so the
-            // Trainer name chosen there waits in user_metadata. Use it rather
-            // than asking again; the setup modal remains the fallback.
-            const signupName = session.user.user_metadata?.username;
-            if (!profile && typeof signupName === 'string' && signupName.trim()) {
-              profile = await createProfileFromSignupName(session.access_token, session.user.id, signupName.trim());
-              profileJustCreated = profile !== null;
-            }
-            // Only a brand-new account imports the guest game; a returning
-            // player keeps their own session.
-            if (mayMigrateGuest && profile && (profileJustCreated || isFreshProfile(profile))) {
-              await gameStore.migrateGuestProgress(session.access_token);
-            }
-          }
-
-          if (authSessionEpoch !== sessionEpoch) {
-            return;
-          }
-
-          set(state => ({
-            user: session.user,
-            session,
-            profile: isRecoverySession
-              ? cachedProfile ?? (state.user?.id === session.user.id ? state.profile : null)
-              : profile,
-            stats: cachedStats ?? (state.user?.id === session.user.id ? state.stats : null),
-            isGuest: false,
-            isLoading: false,
-            pendingEmail: null,
-            pendingPasswordRecovery: isRecoverySession || state.pendingPasswordRecovery,
-            hasResolvedProfile: true,
-            isProfileHydrating: false,
-          }));
-          writeUserCacheFromState(get(), session.user.id);
-          if (!isRecoverySession) {
-            void get().fetchMe();
-          }
-        } catch (err) {
-          if (authSessionEpoch !== sessionEpoch) {
-            return;
-          }
-          console.error('Session hydration failed:', err);
-          set(state => {
-            const fallbackProfile = cachedProfile ?? (state.user?.id === session.user.id ? state.profile : null);
-            const fallbackStats = cachedStats ?? (state.user?.id === session.user.id ? state.stats : null);
-            return {
-              user: session.user,
-              session,
-              profile: fallbackProfile,
-              stats: fallbackStats,
-              isGuest: false,
-              isLoading: false,
-              pendingEmail: null,
-              pendingPasswordRecovery: isRecoverySession || state.pendingPasswordRecovery,
-              hasResolvedProfile: isRecoverySession || Boolean(fallbackProfile),
-              isProfileHydrating: false,
-            };
-          });
-        } finally {
-          if (mayMigrateGuest) gameStore.endMigrationGate();
-        }
-      };
-
-      try {
-        authListenerUnsubscribe?.();
-        authListenerUnsubscribe = null;
-        const handleAuthEvent = async (event: AuthChangeEvent, session: Session | null) => {
-          const shouldDiscardTimedOutSignIn = event === 'SIGNED_IN'
-            && timedOutSignInAttemptId !== null
-            && lastStartedSignInAttemptId === timedOutSignInAttemptId;
-
-          if (shouldDiscardTimedOutSignIn) {
-            timedOutSignInAttemptId = null;
-            lastStartedSignInAttemptId = null;
-            useGameStore.getState().invalidateServerSessionSync();
-            useGameStore.getState().setStorageScope(null);
-            authSessionEpoch += 1;
-            fetchMeInFlight = null;
-            set({
-              ...getGuestAuthState(),
-              isLoading: false,
-            });
-            try {
-              await supabase.auth.signOut({ scope: 'local' });
-            } catch (err) {
-              console.warn('Local sign-out after timed-out sign-in failed:', err);
-            }
-            await resetToFreshGuestGameState('Guest game init after timed-out sign-in failed:');
-            return;
-          }
-
-          const recoveryFromUrl = getRecoveryContextFromUrl();
-          const recoveryFromEvent = event === 'PASSWORD_RECOVERY';
-          const forcePasswordRecovery = recoveryFromEvent || (recoveryFromUrl.isRecovery && recoveryFromUrl.hasAuthToken);
-
-          if (session) {
-            if (
-              (event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED')
-              && wasExplicitlySignedOut()
-            ) {
-              useGameStore.getState().invalidateServerSessionSync();
-              useGameStore.getState().setStorageScope(null);
-              authSessionEpoch += 1;
-              fetchMeInFlight = null;
-              set({
-                ...getGuestAuthState(),
-                isLoading: false,
-              });
-              try {
-                await supabase.auth.signOut({ scope: 'local' });
-              } catch (err) {
-                console.warn('Local sign-out after stale restored session failed:', err);
-              }
-              clearSupabaseAuthStorage();
-              await resetToFreshGuestGameState('Guest game init after stale restored session failed:');
-              return;
-            }
-
-            if (isSigningOut) {
-              return;
-            }
-            if (event === 'SIGNED_IN') {
-              clearSignedOutFlag();
-              timedOutSignInAttemptId = null;
-              lastStartedSignInAttemptId = null;
-            }
-            await applySession(session, forcePasswordRecovery);
-          } else {
-            useGameStore.getState().invalidateServerSessionSync();
-            useGameStore.getState().setStorageScope(null);
-            authSessionEpoch += 1;
-            fetchMeInFlight = null;
-            set({
-              ...getGuestAuthState(),
-            });
-            await resetToFreshGuestGameState('Guest game init after auth session loss failed:');
-          }
-        };
-        // supabase-js awaits this callback while holding its auth lock, so any supabase
-        // call made inside it (profile query, signOut, getSession) deadlocks the client.
-        // Run handlers after the callback returns, one at a time and in event order.
-        const authStateChangeResult = supabase.auth.onAuthStateChange((event, session) => {
-          setTimeout(() => {
-            authEventQueue = authEventQueue
-              .then(() => handleAuthEvent(event, session))
-              .catch(err => console.error('Auth state change handling failed:', err));
-          }, 0);
-        });
-        const subscription = (authStateChangeResult as { data?: { subscription?: { unsubscribe?: () => void } } } | undefined)?.data?.subscription;
-        const unsubscribe = subscription?.unsubscribe;
-        authListenerUnsubscribe = typeof unsubscribe === 'function'
-          ? () => unsubscribe()
-          : null;
-
-        const recoveryFromUrl = getRecoveryContextFromUrl();
-        const { data: { session } } = await supabase.auth.getSession();
-        const forcePasswordRecovery = recoveryFromUrl.isRecovery && recoveryFromUrl.hasAuthToken;
-
-        if (session && wasExplicitlySignedOut()) {
-          try {
-            await supabase.auth.signOut({ scope: 'local' });
-          } catch (err) {
-            console.warn('Local sign-out during init stale session cleanup failed:', err);
-          }
-          clearSupabaseAuthStorage();
-          useGameStore.getState().setStorageScope(null);
-          authSessionEpoch += 1;
-          set({ isLoading: false, hasResolvedProfile: false, isProfileHydrating: false, bootProfile: null, cachedAvatar: null });
-        } else if (session) {
-          await applySession(session, forcePasswordRecovery);
-        } else {
-          useGameStore.getState().setStorageScope(null);
-          authSessionEpoch += 1;
-          set({ isLoading: false, hasResolvedProfile: false, isProfileHydrating: false, bootProfile: null, cachedAvatar: null });
-        }
-      } catch (err) {
-        console.error('Auth init failed:', err);
-        set({ isLoading: false, isProfileHydrating: false, bootProfile: null });
-      } finally {
-        authInitInFlight = null;
-      }
-    })();
-
-    return authInitInFlight;
-  },
-
-  signUp: async (email, password, username) => {
-    // Validate email against disposable blocklist first
-    try {
-      const supabaseUrl = (import.meta.env.VITE_API_URL) as string;
-      const validateRes = await fetch(`${supabaseUrl}/functions/v1/validate-email`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-      if (!validateRes.ok) {
-        if (validateRes.status === 429) {
-          return { error: "Too many sign-up attempts. Wait a moment and try again." };
-        }
-        // Validation endpoint unreachable — allow signup to proceed
-      } else {
-        const validateData = await validateRes.json();
-        if (!validateData.valid) {
-          return { error: validateData.reason ?? "That email isn't accepted by the Pokédex. Try another." };
-        }
-      }
-    } catch {
-      // If validation endpoint is unreachable, allow signup to proceed
-    }
-
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { username },
-        emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL}`,
-      },
-    });
-
-    if (error) return { error: error.message };
-
-    set({ pendingEmail: email });
-
-    const supabaseUrl = (import.meta.env.VITE_API_URL) as string;
-    const { data: { session: newSession } } = await supabase.auth.getSession();
-    if (newSession) {
-      const res = await fetch(`${supabaseUrl}/functions/v1/create-profile`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${newSession.access_token}`,
-        },
-        body: JSON.stringify({ username }),
-      });
-      // A gateway error page isn't JSON; don't let that throw to the caller.
-      const data = await res.json().catch(() => ({} as { error?: string }));
-      if (!res.ok) return { error: data.error ?? "Couldn't register your Trainer Card. Try again." };
-    }
-
-    clearSignedOutFlag();
-    return { error: null };
-  },
-
-  signIn: async (email, password) => {
-    const attemptId = ++signInAttemptCounter;
-    lastStartedSignInAttemptId = attemptId;
-    clearSignedOutFlag();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error && lastStartedSignInAttemptId === attemptId) {
-      lastStartedSignInAttemptId = null;
-    }
-    return { error: error?.message ?? null };
-  },
-
-  markSignInTimedOut: async () => {
-    if (lastStartedSignInAttemptId === null) {
-      return;
-    }
-    timedOutSignInAttemptId = lastStartedSignInAttemptId;
-    useGameStore.getState().invalidateServerSessionSync();
-    useGameStore.getState().setStorageScope(null);
-    authSessionEpoch += 1;
-    fetchMeInFlight = null;
     set({
-      ...getGuestAuthState(),
+      user: session.user,
+      session,
+      isGuest: false,
       isLoading: false,
-    });
-    try {
-      await supabase.auth.signOut({ scope: 'local' });
-    } catch (err) {
-      console.warn('Local sign-out after sign-in timeout failed:', err);
-    }
-  },
-
-  signOut: async () => {
-    isSigningOut = true;
-    const signOutEpoch = ++authSessionEpoch;
-    const userId = get().user?.id ?? null;
-    timedOutSignInAttemptId = null;
-    lastStartedSignInAttemptId = null;
-    useGameStore.getState().invalidateServerSessionSync();
-    useGameStore.getState().setStorageScope(null);
-    useGameStore.getState().clearScopedProgress(null);
-    if (userId) {
-      useGameStore.getState().clearScopedProgress(userId);
-    }
-    fetchMeInFlight = null;
-    set({
-      user: null,
-      session: null,
-      profile: null,
-      stats: null,
-      hasResolvedProfile: false,
-      isProfileHydrating: false,
-      displayBallSync: { inFlight: false, pendingBallId: null, requestId: 0 },
-      isGuest: true,
       pendingEmail: null,
-      pendingPasswordRecovery: false,
+      hasResolvedProfile: false,
+      isProfileHydrating: true,
       bootProfile: null,
-      cachedAvatar: null,
+      cachedAvatar: readCachedAvatar(session.user.id),
+      ...(cached ? { profile: cachedProfile, stats: cachedStats } : {}),
     });
-    setSignedOutFlag();
-    clearAppStorageOnSignOut();
 
     try {
-      try {
-        await supabase.auth.signOut({ scope: 'local' });
-      } catch (err) {
-        console.warn('Supabase sign-out failed (local state already cleared):', err);
-      }
-      clearSupabaseAuthStorage();
-
-      if (authSessionEpoch !== signOutEpoch) {
+      const { status, data } = await loadMe(session.access_token);
+      if (authSessionEpoch !== sessionEpoch) return;
+      if (status === 401) {
+        // Revoked or expired: back to guest.
+        await get().signOut();
         return;
       }
+      if (!data) throw new Error(`get-me failed: ${status}`);
 
-      await resetToFreshGuestGameState('Guest game init after sign-out failed:');
-    } finally {
-      isSigningOut = false;
-    }
-  },
-
-  sendPasswordReset: async (email) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.href.split('#')[0],
-    });
-    return { error: error?.message ?? null };
-  },
-
-  confirmPasswordReset: async (password) => {
-    if (passwordResetInFlight) {
-      return passwordResetInFlight;
-    }
-
-    const request = (async () => {
-      try {
-        const { error } = await supabase.auth.updateUser({ password });
-        if (!error) {
-          clearRecoveryRequirement();
-          clearRecoveryUrlParams();
-          set({ pendingPasswordRecovery: false });
-          await get().fetchMe();
-          return { error: null };
-        }
-
-        const status = (error as { status?: number })?.status;
-        const rawMessage = error.message ?? '';
-        const lowerMessage = rawMessage.toLowerCase();
-        if (status === 422) {
-          if (lowerMessage.includes('password should be different') || lowerMessage.includes('same password')) {
-            return { error: 'Use a different password than your current one.' };
-          }
-          if (lowerMessage.includes('password')) {
-            return { error: 'That password does not meet requirements. Please choose a stronger password.' };
-          }
-          return { error: 'Password reset link is invalid or expired. Request a new reset email and try again.' };
-        }
-
-        return { error: rawMessage || 'Could not update password. Please try again.' };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        const lowerMessage = message.toLowerCase();
-        if (lowerMessage.includes('lock') && lowerMessage.includes('stole it')) {
-          return { error: 'Another auth request interrupted password reset. Please try again.' };
-        }
-        console.error('Password reset failed unexpectedly:', err);
-        return { error: 'Could not update password. Please try again.' };
-      } finally {
-        passwordResetInFlight = null;
+      const fresh: Session = { access_token: session.access_token, user: data.user };
+      writeStoredSession(fresh);
+      // Only a brand-new account imports the guest game; a returning
+      // player keeps their own session.
+      if (mayMigrateGuest && data.profile && isFreshProfile(data.profile)) {
+        await gameStore.migrateGuestProgress(session.access_token);
       }
-    })();
+      if (authSessionEpoch !== sessionEpoch) return;
 
-    passwordResetInFlight = request;
-    return request;
-  },
-
-  resendVerification: async () => {
-    const { user, pendingEmail } = get();
-    const email = user?.email ?? pendingEmail;
-    if (!email) return { error: 'No email on file. Please sign out and try again.' };
-    const { error } = await supabase.auth.resend({
-      type: 'signup',
-      email,
-      options: { emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL}` },
-    });
-    return { error: error?.message ?? null };
-  },
-
-  signInWithGoogle: async () => {
-    clearSignedOutFlag();
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}${import.meta.env.BASE_URL}`,
-      },
-    });
-  },
-
-  updateAvatar: async (config) => {
-    const { session, profile } = get();
-    if (!session) return { error: 'Sign in first, Trainer!' };
-
-    const base = import.meta.env.VITE_API_URL as string;
-    const prevProfile = profile;
-
-    set(state => ({
-      profile: state.profile
-        ? { ...state.profile, avatar_config: { ...state.profile.avatar_config, ...config } }
-        : null,
-    }));
-    writeUserCacheFromState(get(), session.user.id);
-
-    try {
-      const res = await fetch(`${base}/functions/v1/update-profile`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify(config),
+      set({
+        user: data.user,
+        session: fresh,
+        profile: data.profile,
+        stats: data.stats ?? null,
+        hasResolvedProfile: true,
+        isProfileHydrating: false,
       });
+      writeUserCacheFromState(get(), session.user.id);
+    } catch (err) {
+      if (authSessionEpoch !== sessionEpoch) return;
+      console.error('Session hydration failed:', err);
+      set(state => ({
+        profile: cachedProfile ?? state.profile,
+        stats: cachedStats ?? state.stats,
+        hasResolvedProfile: Boolean(cachedProfile ?? state.profile),
+        isProfileHydrating: false,
+      }));
+    } finally {
+      if (mayMigrateGuest) gameStore.endMigrationGate();
+    }
+  };
 
-      if (!res.ok) {
-        set({ profile: prevProfile });
-        writeUserCacheFromState(get(), session.user.id);
-        const d = await res.json().catch(() => ({}));
-        return { error: d.error ?? "Couldn't update your Trainer avatar. Try again." };
+  /** Drops the session locally (and on the server) and resets to a fresh guest game. */
+  const dropSession = async (logLabel: string, revoke: boolean) => {
+    const token = get().session?.access_token;
+    authSessionEpoch += 1;
+    fetchMeInFlight = null;
+    useGameStore.getState().invalidateServerSessionSync();
+    useGameStore.getState().setStorageScope(null);
+    set({ ...getGuestAuthState(), isLoading: false });
+    clearStoredSession();
+    if (revoke && token) revokeToken(token);
+    await resetToFreshGuestGameState(logLabel);
+  };
+
+  return {
+    user: null,
+    session: null,
+    profile: null,
+    stats: null,
+    hasResolvedProfile: false,
+    isProfileHydrating: false,
+    displayBallSync: {
+      inFlight: false,
+      pendingBallId: null,
+      requestId: 0,
+    },
+    isLoading: true,
+    isGuest: true,
+    pendingPasswordRecovery: false,
+    pendingEmail: null,
+    bootProfile: initialBootProfile,
+    cachedAvatar: initialBootProfile?.avatar ?? null,
+    authNotice: null,
+
+    initialize: async () => {
+      if (authInitInFlight) {
+        return authInitInFlight;
       }
 
-      const d = await res.json();
-      set(state => ({
-        profile: state.profile ? { ...state.profile, avatar_config: d.avatar_config } : null,
-      }));
-      writeUserCacheFromState(get(), session.user.id);
-      return { error: null };
-    } catch {
-      set({ profile: prevProfile });
-      writeUserCacheFromState(get(), session.user.id);
-      return { error: 'Connection lost. Check your signal and try again.' };
-    }
-  },
+      const run = (async () => {
+        set({ isLoading: true });
+        try {
+          const params = readAuthUrlParams();
+          if (Object.keys(params).length > 0) clearAuthUrlParams();
 
-  fetchMe: async () => {
-    const { session } = get();
-    if (!session) return { error: null };
+          if (params.auth_error) {
+            set({ authNotice: AUTH_ERROR_NOTICES[params.auth_error] ?? AUTH_ERROR_NOTICES.google });
+          }
+          if (params.reset) {
+            pendingResetToken = params.reset;
+            set({ pendingPasswordRecovery: true });
+          }
 
-    const sessionToken = session.access_token;
-    if (fetchMeInFlight && fetchMeInFlight.token === sessionToken) {
-      return fetchMeInFlight.promise;
-    }
-
-    const supabaseUrl = import.meta.env.VITE_API_URL as string;
-    const request = (async () => {
-      try {
-        const res = await fetch(`${supabaseUrl}/functions/v1/get-me`, {
-          headers: { 'Authorization': `Bearer ${sessionToken}` },
-        });
-        if (res.status === 401) return { error: "You're not signed in, Trainer." };
-        if (res.status === 404) return { error: 'Trainer profile not found. Try signing in again.' };
-        const data = await res.json();
-        const currentState = get();
-        const currentSession = currentState.session;
-        if (!currentSession || currentSession.access_token !== sessionToken) {
-          return { error: null };
-        }
-
-        const nextProfile = data.profile
-          ? {
-              ...(currentState.profile ?? data.profile),
-              ...data.profile,
-              display_ball: currentState.displayBallSync.inFlight
-                ? (currentState.displayBallSync.pendingBallId ?? currentState.profile?.display_ball ?? data.profile.display_ball)
-                : data.profile.display_ball,
+          let session = readStoredSession();
+          if (params.verify) {
+            const verified = await sessionFrom(await postJson('/v1/auth/verify', { token: params.verify }));
+            if (verified) {
+              if (session && session.access_token !== verified.access_token) revokeToken(session.access_token);
+              session = verified;
+            } else {
+              set({ authNotice: 'That confirmation link is invalid or has expired. Sign in to get a new one.' });
             }
-          : currentState.profile;
-        const nextStats = data.stats ?? null;
-        const profileChanged = !isJsonEqual(currentState.profile, nextProfile);
-        const statsChanged = !isJsonEqual(currentState.stats, nextStats);
+          }
+          if (params.login) {
+            const exchanged = await sessionFrom(await postJson('/v1/auth/google/exchange', { token: params.login }));
+            if (exchanged) {
+              if (session && session.access_token !== exchanged.access_token) revokeToken(session.access_token);
+              session = exchanged;
+            } else {
+              set({ authNotice: AUTH_ERROR_NOTICES.google });
+            }
+          }
 
-        if (!profileChanged && !statsChanged) {
+          if (session) {
+            await applySession(session);
+          } else {
+            useGameStore.getState().setStorageScope(null);
+            authSessionEpoch += 1;
+            set({ isLoading: false, hasResolvedProfile: false, isProfileHydrating: false, bootProfile: null, cachedAvatar: null });
+          }
+        } catch (err) {
+          console.error('Auth init failed:', err);
+          set({ isLoading: false, isProfileHydrating: false, bootProfile: null });
+        }
+      })();
+
+      // Cleared after the assignment: the body may finish synchronously (guest path).
+      authInitInFlight = run;
+      void run.finally(() => {
+        if (authInitInFlight === run) authInitInFlight = null;
+      });
+      return run;
+    },
+
+    signUp: async (email, password, username) => {
+      try {
+        const res = await postJson('/v1/auth/signup', { email, password, username });
+        const data = await readBody(res);
+        if (!res.ok) {
+          if (res.status === 429) return { error: 'Too many sign-up attempts. Wait a moment and try again.' };
+          return { error: data.error ?? "Couldn't register your Trainer Card. Try again." };
+        }
+      } catch {
+        return { error: 'Connection lost. Check your signal and try again.' };
+      }
+      set({ pendingEmail: email });
+      return { error: null };
+    },
+
+    signIn: async (email, password) => {
+      const attemptId = ++signInAttemptCounter;
+      lastStartedSignInAttemptId = attemptId;
+      try {
+        const res = await postJson('/v1/auth/login', { email, password });
+        // The modal gave up on this attempt; don't sign in behind its back.
+        if (timedOutSignInAttemptId === attemptId) {
+          timedOutSignInAttemptId = null;
+          const late = await sessionFrom(res);
+          if (late) revokeToken(late.access_token);
           return { error: null };
         }
-
-        set({
-          profile: nextProfile,
-          stats: nextStats,
-        });
-        // Write cache so profile/stats appear instantly on next load
-        const { session: latestSession } = get();
-        if (latestSession && latestSession.access_token === sessionToken) {
-          writeProfileCache(latestSession.user.id, nextProfile, nextStats);
+        if (!res.ok) {
+          const data = await readBody(res);
+          if (data.code === 'email_not_verified') {
+            set({ pendingEmail: email });
+            return { error: 'Confirm your email first. Check your inbox for the link.' };
+          }
+          if (res.status === 429) return { error: 'Too many sign-in attempts. Wait a few minutes and try again.' };
+          return { error: data.error ?? "Couldn't sign in. Try again." };
         }
+        const session = await sessionFrom(res);
+        if (!session) return { error: "Couldn't sign in. Try again." };
+        await applySession(session);
         return { error: null };
       } catch {
-        return { error: "Couldn't load your Trainer data. Try again." };
+        return { error: 'Connection lost. Check your signal and try again.' };
       } finally {
-        if (fetchMeInFlight?.token === sessionToken) {
-          fetchMeInFlight = null;
-        }
+        if (lastStartedSignInAttemptId === attemptId) lastStartedSignInAttemptId = null;
       }
-    })();
+    },
 
-    fetchMeInFlight = { token: sessionToken, promise: request };
-    return request;
-  },
+    markSignInTimedOut: async () => {
+      if (lastStartedSignInAttemptId === null) {
+        return;
+      }
+      timedOutSignInAttemptId = lastStartedSignInAttemptId;
+      if (get().session) {
+        await dropSession('Guest game init after sign-in timeout failed:', true);
+      }
+    },
 
-  updateDisplayBall: async (ballId) => {
-    const { session } = get();
-    if (!session) return { error: "You're not signed in, Trainer." };
+    signOut: async () => {
+      const userId = get().user?.id ?? null;
+      timedOutSignInAttemptId = null;
+      lastStartedSignInAttemptId = null;
+      pendingResetToken = null;
+      useGameStore.getState().clearScopedProgress(null);
+      if (userId) {
+        useGameStore.getState().clearScopedProgress(userId);
+      }
+      clearAppStorageOnSignOut();
+      await dropSession('Guest game init after sign-out failed:', true);
+    },
 
-    const prevBall = get().profile?.display_ball;
-    const requestId = get().displayBallSync.requestId + 1;
-    // Optimistic update before network call
-    set(state => ({
-      profile: state.profile ? { ...state.profile, display_ball: ballId } : null,
-      displayBallSync: {
-        inFlight: true,
-        pendingBallId: ballId,
-        requestId,
-      },
-    }));
+    sendPasswordReset: async (email) => {
+      try {
+        const res = await postJson('/v1/auth/recover', { email });
+        if (res.status === 429) return { error: 'Too many emails requested. Wait a while and try again.' };
+        if (!res.ok) return { error: (await readBody(res)).error ?? "Couldn't send the reset email. Try again." };
+        return { error: null };
+      } catch {
+        return { error: 'Connection lost. Check your signal and try again.' };
+      }
+    },
 
-    const supabaseUrl = import.meta.env.VITE_API_URL as string;
-    try {
-      const res = await fetch(`${supabaseUrl}/functions/v1/set-display-ball`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
+    confirmPasswordReset: async (password) => {
+      if (passwordResetInFlight) {
+        return passwordResetInFlight;
+      }
+
+      const request = (async () => {
+        try {
+          if (!pendingResetToken) {
+            return { error: 'Password reset link is invalid or expired. Request a new reset email and try again.' };
+          }
+          const res = await postJson('/v1/auth/reset', { token: pendingResetToken, password });
+          if (!res.ok) {
+            const data = await readBody(res);
+            if (res.status === 429) return { error: 'Too many attempts. Wait a few minutes and try again.' };
+            return { error: data.error ?? 'Could not update password. Please try again.' };
+          }
+          const session = await sessionFrom(res);
+          if (!session) return { error: 'Could not update password. Please try again.' };
+          pendingResetToken = null;
+          set({ pendingPasswordRecovery: false });
+          const previous = get().session;
+          if (previous && previous.access_token !== session.access_token) revokeToken(previous.access_token);
+          await applySession(session);
+          return { error: null };
+        } catch (err) {
+          console.error('Password reset failed unexpectedly:', err);
+          return { error: 'Could not update password. Please try again.' };
+        } finally {
+          passwordResetInFlight = null;
+        }
+      })();
+
+      passwordResetInFlight = request;
+      return request;
+    },
+
+    resendVerification: async () => {
+      const { user, pendingEmail } = get();
+      const email = user?.email ?? pendingEmail;
+      if (!email) return { error: 'No email on file. Please sign out and try again.' };
+      try {
+        const res = await postJson('/v1/auth/resend', { email });
+        if (res.status === 429) return { error: 'Too many emails requested. Wait a while and try again.' };
+        if (!res.ok) return { error: (await readBody(res)).error ?? "Couldn't resend the email. Try again." };
+        return { error: null };
+      } catch {
+        return { error: 'Connection lost. Check your signal and try again.' };
+      }
+    },
+
+    signInWithGoogle: async () => {
+      const origin = encodeURIComponent(window.location.origin);
+      window.location.assign(apiUrl(`/v1/auth/google/start?origin=${origin}`));
+    },
+
+    updateAvatar: async (config) => {
+      const { session, profile } = get();
+      if (!session) return { error: 'Sign in first, Trainer!' };
+
+      const prevProfile = profile;
+
+      set(state => ({
+        profile: state.profile
+          ? { ...state.profile, avatar_config: { ...state.profile.avatar_config, ...config } }
+          : null,
+      }));
+      writeUserCacheFromState(get(), session.user.id);
+
+      try {
+        const res = await fetch(apiUrl('/v1/update-profile'), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', ...bearer(session.access_token) },
+          body: JSON.stringify(config),
+        });
+
+        if (!res.ok) {
+          set({ profile: prevProfile });
+          writeUserCacheFromState(get(), session.user.id);
+          const d = await readBody(res);
+          return { error: d.error ?? "Couldn't update your Trainer avatar. Try again." };
+        }
+
+        const d = await res.json();
+        set(state => ({
+          profile: state.profile ? { ...state.profile, avatar_config: d.avatar_config } : null,
+        }));
+        writeUserCacheFromState(get(), session.user.id);
+        return { error: null };
+      } catch {
+        set({ profile: prevProfile });
+        writeUserCacheFromState(get(), session.user.id);
+        return { error: 'Connection lost. Check your signal and try again.' };
+      }
+    },
+
+    fetchMe: async () => {
+      const { session } = get();
+      if (!session) return { error: null };
+
+      const sessionToken = session.access_token;
+      if (fetchMeInFlight && fetchMeInFlight.token === sessionToken) {
+        return fetchMeInFlight.promise;
+      }
+
+      const request = (async () => {
+        try {
+          const { status, data } = await loadMe(sessionToken);
+          if (status === 401) {
+            if (get().session?.access_token === sessionToken) await get().signOut();
+            return { error: "You're not signed in, Trainer." };
+          }
+          if (!data) return { error: "Couldn't load your Trainer data. Try again." };
+          const currentState = get();
+          const currentSession = currentState.session;
+          if (!currentSession || currentSession.access_token !== sessionToken) {
+            return { error: null };
+          }
+
+          const nextProfile = data.profile
+            ? {
+                ...(currentState.profile ?? data.profile),
+                ...data.profile,
+                display_ball: currentState.displayBallSync.inFlight
+                  ? (currentState.displayBallSync.pendingBallId ?? currentState.profile?.display_ball ?? data.profile.display_ball)
+                  : data.profile.display_ball,
+              }
+            : currentState.profile;
+          const nextStats = data.stats ?? null;
+          const profileChanged = !isJsonEqual(currentState.profile, nextProfile);
+          const statsChanged = !isJsonEqual(currentState.stats, nextStats);
+
+          if (!profileChanged && !statsChanged) {
+            return { error: null };
+          }
+
+          set({
+            profile: nextProfile,
+            stats: nextStats,
+          });
+          // Write cache so profile/stats appear instantly on next load
+          const { session: latestSession } = get();
+          if (latestSession && latestSession.access_token === sessionToken) {
+            writeProfileCache(latestSession.user.id, nextProfile, nextStats);
+          }
+          return { error: null };
+        } catch {
+          return { error: "Couldn't load your Trainer data. Try again." };
+        } finally {
+          if (fetchMeInFlight?.token === sessionToken) {
+            fetchMeInFlight = null;
+          }
+        }
+      })();
+
+      fetchMeInFlight = { token: sessionToken, promise: request };
+      return request;
+    },
+
+    updateDisplayBall: async (ballId) => {
+      const { session } = get();
+      if (!session) return { error: "You're not signed in, Trainer." };
+
+      const prevBall = get().profile?.display_ball;
+      const requestId = get().displayBallSync.requestId + 1;
+      // Optimistic update before network call
+      set(state => ({
+        profile: state.profile ? { ...state.profile, display_ball: ballId } : null,
+        displayBallSync: {
+          inFlight: true,
+          pendingBallId: ballId,
+          requestId,
         },
-        body: JSON.stringify({ ball_id: ballId }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
+      }));
+
+      try {
+        const res = await fetch(apiUrl('/v1/set-display-ball'), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', ...bearer(session.access_token) },
+          body: JSON.stringify({ ball_id: ballId }),
+        });
+        const data = await readBody(res);
+        if (!res.ok) {
+          if (get().displayBallSync.requestId !== requestId) {
+            return { error: null };
+          }
+          // Revert on failure
+          set(state => ({
+            profile: state.profile ? { ...state.profile, display_ball: prevBall ?? 'poke-ball' } : null,
+            displayBallSync: {
+              inFlight: false,
+              pendingBallId: null,
+              requestId,
+            },
+          }));
+          return { error: data.error ?? null };
+        }
+
         if (get().displayBallSync.requestId !== requestId) {
           return { error: null };
         }
-        // Revert on failure
+
+        set(state => ({
+          profile: state.profile ? { ...state.profile, display_ball: ballId } : null,
+          displayBallSync: {
+            inFlight: false,
+            pendingBallId: null,
+            requestId,
+          },
+        }));
+        const { profile: updatedProfile, stats: updatedStats } = get();
+        writeProfileCache(session.user.id, updatedProfile, updatedStats);
+        return { error: null };
+      } catch {
+        if (get().displayBallSync.requestId !== requestId) {
+          return { error: null };
+        }
         set(state => ({
           profile: state.profile ? { ...state.profile, display_ball: prevBall ?? 'poke-ball' } : null,
           displayBallSync: {
@@ -956,140 +752,93 @@ const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
             requestId,
           },
         }));
-        return { error: data.error ?? null };
+        return { error: "Couldn't update your display ball. Try again." };
       }
+    },
 
-      if (get().displayBallSync.requestId !== requestId) {
-        return { error: null };
-      }
+    dismissTierPromptForever: async () => {
+      const { session } = get();
+      if (!session) return { error: "You're not signed in, Trainer." };
 
-      set(state => ({
-        profile: state.profile ? { ...state.profile, display_ball: ballId } : null,
-        displayBallSync: {
-          inFlight: false,
-          pendingBallId: null,
-          requestId,
-        },
-      }));
-      const { profile: updatedProfile, stats: updatedStats } = get();
-      writeProfileCache(session.user.id, updatedProfile, updatedStats);
-      return { error: null };
-    } catch {
-      if (get().displayBallSync.requestId !== requestId) {
-        return { error: null };
-      }
-      set(state => ({
-        profile: state.profile ? { ...state.profile, display_ball: prevBall ?? 'poke-ball' } : null,
-        displayBallSync: {
-          inFlight: false,
-          pendingBallId: null,
-          requestId,
-        },
-      }));
-      return { error: "Couldn't update your display ball. Try again." };
-    }
-  },
-
-  dismissTierPromptForever: async () => {
-    const { session } = get();
-    if (!session) return { error: "You're not signed in, Trainer." };
-
-    const previousProfile = get().profile;
-    set(state => ({
-      profile: state.profile
-        ? { ...state.profile, tier_prompt_dismissed_forever: true }
-        : null,
-    }));
-
-    const supabaseUrl = import.meta.env.VITE_API_URL as string;
-    try {
-      const res = await fetch(`${supabaseUrl}/functions/v1/dismiss-tier-prompt`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        set({ profile: previousProfile });
-        return { error: data.error ?? "Couldn't save this preference. Try again." };
-      }
-
+      const previousProfile = get().profile;
       set(state => ({
         profile: state.profile
           ? { ...state.profile, tier_prompt_dismissed_forever: true }
           : null,
       }));
-      writeUserCacheFromState(get(), session.user.id);
-      return { error: null };
-    } catch {
-      set({ profile: previousProfile });
-      return { error: 'Connection lost. Check your signal and try again.' };
-    }
-  },
 
-  setupUsername: async (username) => {
-    const { session } = get();
-    if (!session) return { error: "You're not signed in, Trainer." };
+      try {
+        const res = await fetch(apiUrl('/v1/dismiss-tier-prompt'), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', ...bearer(session.access_token) },
+        });
+        const data = await readBody(res);
+        if (!res.ok) {
+          set({ profile: previousProfile });
+          return { error: data.error ?? "Couldn't save this preference. Try again." };
+        }
 
-    const supabaseUrl = import.meta.env.VITE_API_URL as string;
-    try {
-      const res = await fetch(`${supabaseUrl}/functions/v1/create-profile`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ username }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        const message = String(data?.error ?? '');
-        const duplicateForCurrentUser = res.status === 409
-          && (message.toLowerCase().includes('taken') || message.toLowerCase().includes('exists'));
-        if (!duplicateForCurrentUser) {
+        set(state => ({
+          profile: state.profile
+            ? { ...state.profile, tier_prompt_dismissed_forever: true }
+            : null,
+        }));
+        writeUserCacheFromState(get(), session.user.id);
+        return { error: null };
+      } catch {
+        set({ profile: previousProfile });
+        return { error: 'Connection lost. Check your signal and try again.' };
+      }
+    },
+
+    setupUsername: async (username) => {
+      const { session } = get();
+      if (!session) return { error: "You're not signed in, Trainer." };
+
+      try {
+        const res = await postJson('/v1/create-profile', { username }, session.access_token);
+        if (!res.ok) {
+          const data = await readBody(res);
           return { error: data.error ?? "Couldn't save your Trainer name. Try again." };
         }
+
+        const { data } = await loadMe(session.access_token);
+        const profile = data?.profile ?? null;
+        set({
+          profile,
+          stats: data?.stats ?? get().stats,
+          hasResolvedProfile: true,
+          isProfileHydrating: false,
+        });
+        writeUserCacheFromState(get(), session.user.id);
+        if (!profile) {
+          return { error: "Couldn't load your Trainer profile yet. Please try again." };
+        }
+        // Fallback signup path (name picked in the setup modal): import the
+        // guest game now, then reload the server session.
+        const game = useGameStore.getState();
+        if (game.hasGuestProgress()) await game.migrateGuestProgress(session.access_token);
+        return { error: null };
+      } catch {
+        return { error: "Couldn't save your Trainer name. Try again." };
       }
+    },
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', session.user.id)
-        .maybeSingle();
+    clearPasswordRecovery: () => {
+      pendingResetToken = null;
+      set({ pendingPasswordRecovery: false });
+    },
 
-      set({
-        profile: profile ?? null,
-        hasResolvedProfile: true,
-        isProfileHydrating: false,
-      });
-      writeUserCacheFromState(get(), session.user.id);
-      if (!profile) {
-        return { error: "Couldn't load your Trainer profile yet. Please try again." };
-      }
-      // Fallback signup path (name picked in the setup modal): import the
-      // guest game now, then reload the server session.
-      const game = useGameStore.getState();
-      if (game.hasGuestProgress()) await game.migrateGuestProgress(session.access_token);
-      return { error: null };
-    } catch {
-      return { error: "Couldn't save your Trainer name. Try again." };
-    }
-  },
+    clearAuthNotice: () => set({ authNotice: null }),
 
-  clearPasswordRecovery: () => {
-    clearRecoveryRequirement();
-    set({ pendingPasswordRecovery: false });
-  },
-
-  cacheAvatar: (src, dataUrl) => {
-    const userId = get().session?.user.id;
-    if (!userId) return;
-    writeCachedAvatar(userId, src, dataUrl);
-    set({ cachedAvatar: { src, dataUrl } });
-  },
-}));
+    cacheAvatar: (src, dataUrl) => {
+      const userId = get().session?.user.id;
+      if (!userId) return;
+      writeCachedAvatar(userId, src, dataUrl);
+      set({ cachedAvatar: { src, dataUrl } });
+    },
+  };
+});
 
 // Queued guesses read the token when they are sent, not when they were typed.
 setAccessTokenProvider(() => useAuthStore.getState().session?.access_token ?? null);

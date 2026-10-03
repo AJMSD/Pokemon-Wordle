@@ -15,7 +15,6 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.117.2",
     "axios": "^1.5.0",
     "crypto-js": "^4.1.1",
     "pixelarticons": "^2.4.1",

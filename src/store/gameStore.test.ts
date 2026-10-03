@@ -509,7 +509,7 @@ describe('gameStore guest migration', () => {
     expect(await useGameStore.getState().migrateGuestProgress('token-1')).toBe(true)
 
     const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('https://api.example.test/functions/v1/migrate-guest')
+    expect(url).toBe('https://api.example.test/v1/migrate-guest')
     expect(JSON.parse(init.body)).toEqual({
       puzzle_date_key: getJSTDateKey(), guest_id: 'guest-abc', guesses: ['pikachu', 'eevee'],
     })
@@ -641,7 +641,6 @@ describe('gameStore guest server play (per-user days)', () => {
     // 2026-10-06 12:00 JST: a per-user day.
     vi.setSystemTime(new Date('2026-10-06T03:00:00Z'))
     vi.stubEnv('VITE_API_URL', 'https://api.example.test')
-    vi.stubEnv('VITE_API_ANON_KEY', 'anon-key')
     localStorage.clear()
     localStorage.setItem('wurmple_guest_id', GUEST_ID)
     const store = useGameStore.getState()
@@ -678,7 +677,7 @@ describe('gameStore guest server play (per-user days)', () => {
     expect(saved.includes(`"${answer}"`)).toBe(false)
   })
 
-  it('loads the session with the anon key and guest id, and submits guesses to the server', async () => {
+  it('loads the session by guest id without Authorization, and submits guesses to the server', async () => {
     const calls = mockFetch((url) =>
       String(url).includes('submit-guess')
         ? session({ guesses: ['pikachu'], results: [['absent', 'absent', 'absent', 'absent', 'absent', 'absent', 'absent']], version: 3 })
@@ -690,12 +689,13 @@ describe('gameStore guest server play (per-user days)', () => {
     const get = calls.find(c => c.url.includes('/get-session'))!
     expect(get.url).toContain('puzzle_date_key=2026-10-06')
     expect(get.url).toContain(`guest_id=${GUEST_ID}`)
-    expect((get.init?.headers as Record<string, string>).Authorization).toBe('Bearer anon-key')
+    expect((get.init?.headers as Record<string, string>).Authorization).toBeUndefined()
     expect(useGameStore.getState().nameLength).toBe(7)
 
     await useGameStore.getState().submitGuessToServer('pikachu')
     const post = calls.find(c => c.url.includes('/submit-guess'))!
     expect(JSON.parse(String(post.init?.body))).toMatchObject({ guess: 'pikachu', guest_id: GUEST_ID, puzzle_date_key: '2026-10-06' })
+    expect((post.init?.headers as Record<string, string>).Authorization).toBeUndefined()
     expect(useGameStore.getState().guessResults).toHaveLength(1)
   })
 
