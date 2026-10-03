@@ -1,6 +1,9 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useGameStore } from './store/gameStore'
-import { useAuthStore, BALL_NAMES } from './store/authStore'
+import { useAuthStore, BALL_NAMES, canPrefetchGameSession } from './store/authStore'
+import { readPersistedAccessToken } from './lib/supabase'
+import { getJSTDateKey } from './utils/pokemonUtils'
+import useDayRollover from './hooks/useDayRollover'
 import Header from './components/Header'
 import PokedexUI from './components/PokedexUI'
 import BallUnlockModal from './components/BallUnlockModal'
@@ -99,23 +102,47 @@ function App() {
   const [bannerDismissed, setBannerDismissed] = useState(false)
   const milestoneShownRef = useRef(false)
   const lastSyncedUserId = useRef<string | null>(null)
+  const lastSyncedToken = useRef<string | null>(null)
+
+  useDayRollover()
 
   useEffect(() => {
-    initialize().then(() => initializeGame())
-  }, [initialize, initializeGame])
-
-  useEffect(() => {
-    if (!pendingPasswordRecovery && !isGuest && session?.access_token && user?.email_confirmed_at && user.id !== lastSyncedUserId.current) {
-      lastSyncedUserId.current = user.id
-      // The server sync doesn't depend on PokéAPI details, so don't wait for them.
+    // A returning player's token is already in storage: start loading the
+    // server game now instead of after auth hydration (profile fetch etc.).
+    // Skipped when a guest game may need importing first (see authStore).
+    const persisted = readPersistedAccessToken()
+    const game = useGameStore.getState()
+    if (persisted && canPrefetchGameSession(persisted.userId) && !game.hasGuestProgress()) {
+      lastSyncedUserId.current = persisted.userId
+      lastSyncedToken.current = persisted.accessToken
+      game.setStorageScope(persisted.userId)
       void initializeGame()
-      void initializeServerSession(session.access_token)
+      void initializeServerSession(persisted.accessToken)
+    }
+    initialize().then(() => initializeGame())
+  }, [initialize, initializeGame, initializeServerSession])
+
+  useEffect(() => {
+    const token = session?.access_token
+    if (!pendingPasswordRecovery && !isGuest && token && user?.email_confirmed_at) {
+      const userChanged = user.id !== lastSyncedUserId.current
+      // A refreshed token after a failed early load gets one more try.
+      const retryWithNewToken = token !== lastSyncedToken.current
+        && useGameStore.getState().puzzleDateKey !== getJSTDateKey()
+      if (userChanged || retryWithNewToken) {
+        lastSyncedUserId.current = user.id
+        lastSyncedToken.current = token
+        // The server sync doesn't depend on PokéAPI details, so don't wait for them.
+        if (userChanged) void initializeGame()
+        void initializeServerSession(token)
+      }
     }
   }, [pendingPasswordRecovery, isGuest, session?.access_token, user?.email_confirmed_at, user?.id, initializeGame, initializeServerSession])
 
   useEffect(() => {
     if (isGuest) {
       lastSyncedUserId.current = null
+      lastSyncedToken.current = null
     }
   }, [isGuest])
 
@@ -173,6 +200,7 @@ function App() {
     setShowProfile(false)
     setShowAuth(false)
     lastSyncedUserId.current = null
+    lastSyncedToken.current = null
     await signOut()
   }
 
