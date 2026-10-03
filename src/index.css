@@ -282,29 +282,9 @@
   clip-path: var(--pixel-circle);
 }
 
-.small-light.red { --light-color: #FF0000; --light-glow: #FF9A9A; }
-.small-light.yellow { --light-color: #FFDE00; --light-glow: #FFF6A8; }
-.small-light.green { --light-color: #32CB65; --light-glow: #A8FFC6; }
-
-/* Small lights sit dim until the player finds 25% / 50% / 75% of the name's
-   letters (see logic/pokedexLights.ts); then they glow: white pixel ring and
-   a hard colour swap, matching the blue light. */
-.small-light:not(.lit)::before {
-  filter: brightness(0.45) saturate(0.6);
-}
-
-.small-light.lit {
-  background-color: #fff;
-}
-
-.small-light.lit::before {
-  animation: smallLightGlow 1.2s steps(1, end) infinite;
-}
-
-@keyframes smallLightGlow {
-  0%, 100% { background-color: var(--light-color); }
-  50% { background-color: var(--light-glow); }
-}
+.small-light.red { --light-color: #FF0000; }
+.small-light.yellow { --light-color: #FFDE00; }
+.small-light.green { --light-color: #32CB65; }
 
 .main-screen-container {
   padding: 15px;
@@ -401,7 +381,6 @@
   gap: 5px;
 }
 
-/* Sound hole glow styles with 3D effect */
 .sound-hole {
   width: 10px;
   height: 10px;
@@ -409,14 +388,10 @@
   clip-path: var(--pixel-circle);
 }
 
-.sound-hole.win-glow {
+/* Dots fill at 25% / 50% / 75% / 100% of the name's letters found in place
+   (see logic/pokedexLights.ts); all four on a win. */
+.sound-hole.filled {
   background-color: #FFA500;
-  animation: pulseGlow 1.5s steps(1, end) infinite;
-}
-
-@keyframes pulseGlow {
-  0%, 100% { background-color: #FFA500; }
-  50% { background-color: #FF6347; }
 }
 
 .guess-input-container {
@@ -1027,7 +1002,6 @@ header h1 {
   }
   .pokemon-image,
   .hint-new,
-  .sound-hole,
   .hint-glow,
   .unlock-ring-animate,
   .tier-crown,

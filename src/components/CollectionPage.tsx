@@ -389,7 +389,7 @@ const CollectionPage: React.FC = () => {
                       </span>
                     </button>
                     {showEquip && (
-                      <div className="flex-shrink-0 pr-2 sm:pr-0 sm:w-full sm:px-3 sm:pb-3">
+                      <div className="flex-shrink-0 pr-2 sm:w-full sm:px-3 sm:pb-3">
                         <button
                           disabled={settingBall}
                           onClick={() => handleSetBall(ball.id)}

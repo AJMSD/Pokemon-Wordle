@@ -6,7 +6,7 @@ import GuessList from './GuessList'
 import useToast from '../hooks/useToast'
 import useGame from '../hooks/useGame'
 import { ballSpriteUrl } from '../lib/sprites'
-import { litLightCount } from '../logic/pokedexLights'
+import { filledDotCount } from '../logic/pokedexLights'
 
 const PokedexUI: React.FC = () => {
   const [currentGuess, setCurrentGuess] = useState('')
@@ -33,8 +33,8 @@ const PokedexUI: React.FC = () => {
   const suggestionItemsRef = useRef<Array<HTMLDivElement | null>>([])
   
   // Easter egg: the small lights glow as more of the name's letters are found.
-  const litLights = useMemo(
-    () => litLightCount(guesses, dailyPokemon?.name ?? '', gameStatus === 'won'),
+  const filledDots = useMemo(
+    () => filledDotCount(guesses, dailyPokemon?.name ?? '', gameStatus === 'won'),
     [guesses, dailyPokemon?.name, gameStatus]
   )
 
@@ -259,9 +259,9 @@ const PokedexUI: React.FC = () => {
           <div className="blue-light"></div>
           <div className="left-panel-controls">
             <div className="small-lights-container" aria-hidden="true">
-              {(['red', 'yellow', 'green'] as const).map((color, i) => (
-                <div key={color} className={`small-light ${color}${i < litLights ? ' lit' : ''}`}></div>
-              ))}
+              <div className="small-light red"></div>
+              <div className="small-light yellow"></div>
+              <div className="small-light green"></div>
             </div>
           </div>
         </div>
@@ -276,7 +276,7 @@ const PokedexUI: React.FC = () => {
             </div>
             <div className="sound-holes">
               {[0, 1, 2, 3].map(i => (
-                <div key={i} className={`sound-hole ${gameStatus === 'won' ? 'win-glow' : ''}`}></div>
+                <div key={i} className={`sound-hole${i < filledDots ? ' filled' : ''}`}></div>
               ))}
             </div>
           </div>
