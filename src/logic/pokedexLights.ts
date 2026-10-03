@@ -1,4 +1,4 @@
-import { getLetterMatchResult, normalizePokemonName } from '../utils/pokemonUtils';
+import type { LetterResult } from '../types';
 
 // Share of the name's letters found in the right spot that fills each of the
 // four dots under the Pokédex screen.
@@ -9,18 +9,23 @@ export const DOT_THRESHOLDS = [0.25, 0.5, 0.75, 1] as const;
  * counting every position any guess has hit (so dots never empty again).
  * Thresholds are inclusive (threshold <= share) and only ever compare a ratio,
  * so the dots say how close you are without spelling out the name's length.
+ * Takes the per-guess colour rows (server-provided when signed in), so the
+ * client never needs the answer itself.
  */
-export function filledDotCount(guesses: string[], targetName: string, won = false): number {
+export function filledDotCount(
+  guessResults: LetterResult[][],
+  nameLength: number | null,
+  won = false,
+): number {
   if (won) return DOT_THRESHOLDS.length;
-  const target = normalizePokemonName(targetName);
-  if (!target) return 0;
+  if (!nameLength) return 0;
 
   const found = new Set<number>();
-  for (const guess of guesses) {
-    getLetterMatchResult(guess, target).forEach((result, i) => {
+  for (const row of guessResults) {
+    row.forEach((result, i) => {
       if (result === 'correct') found.add(i);
     });
   }
-  const share = found.size / target.length;
+  const share = found.size / nameLength;
   return DOT_THRESHOLDS.filter(threshold => threshold <= share).length;
 }
