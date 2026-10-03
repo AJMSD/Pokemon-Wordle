@@ -1,5 +1,5 @@
 // SERVER ONLY. Never import this (or anything that reads TARGET_SALT) from src/.
-import { affinePick } from '../../../src/logic/dailyTarget.ts';
+import { affinePick } from '../../src/logic/dailyTarget.ts';
 import { deriveSeeds } from './hmacSeeds.ts';
 
 function targetSalt(): string {

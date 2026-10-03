@@ -1,0 +1,14 @@
+{
+  "nodeModulesDir": "none",
+  "imports": {
+    "postgres": "npm:postgres@3.4.7",
+    "bcryptjs": "npm:bcryptjs@2.4.3",
+    "jose": "npm:jose@5.9.6",
+    "nodemailer": "npm:nodemailer@6.9.16"
+  },
+  "tasks": {
+    "start": "deno run --allow-net --allow-env --allow-read --allow-sys main.ts",
+    "migrate": "deno run --allow-net --allow-env --allow-read migrate.ts",
+    "test": "deno test --allow-net --allow-env --allow-read --allow-sys ."
+  }
+}

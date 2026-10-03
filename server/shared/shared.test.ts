@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
 import { deriveSeeds } from './hmacSeeds';
-import { affinePick, POKEMON_COUNT } from '../../../src/logic/dailyTarget';
+import { affinePick, POKEMON_COUNT } from '../../src/logic/dailyTarget';
 import { getLetterMatchResult, normalizeName } from './letterMatch';
 import { buildSessionResponse, computeResults, nameLength } from './sessionResponse';
 import { replayGuestGuesses, hintFlagsFor, completionFor } from './migrateGuest';

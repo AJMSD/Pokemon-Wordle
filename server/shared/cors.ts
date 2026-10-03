@@ -1,4 +1,4 @@
-// Origins allowed to call the functions from a browser. Auth is a bearer
+// Origins allowed to call the API from a browser. Auth is a bearer
 // header (not cookies), but there is no reason to let arbitrary sites in.
 export const ALLOWED_ORIGINS: readonly string[] = [
   'https://wurmple.ajmsd.space',
@@ -14,7 +14,7 @@ export function allowedOrigin(origin: string | null | undefined): string | null 
 /** CORS headers for one request. Echoes the Origin only when allowlisted. */
 export function corsHeadersFor(req: Request): Record<string, string> {
   const headers: Record<string, string> = {
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Headers': 'authorization, content-type',
     'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
     // Browsers cache the preflight for a day instead of repeating it per call.
     'Access-Control-Max-Age': '86400',

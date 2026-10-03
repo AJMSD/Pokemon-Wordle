@@ -1,9 +1,8 @@
 // Who a game request is for. Pure (no Deno APIs) so it can be unit-tested.
 //
-// Signed-in players are identified by their JWT subject (callers must still
-// confirm it with getAuthUser()). Guests send the anon key plus their
-// client-generated guest id; their sessions and targets live on the server
-// too, so the client never learns the answer early.
+// Signed-in players are identified by their session's user id. Guests send no
+// Authorization header, only their client-generated guest id; their sessions
+// and targets live on the server too, so the client never learns the answer early.
 
 // Client guest ids are crypto.randomUUID() or a base36 fallback.
 export const GUEST_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
@@ -17,11 +16,6 @@ export function identifyPlayer(userId: string | null, guestId: unknown): Player 
   if (userId) return { kind: 'user', id: userId };
   if (typeof guestId === 'string' && GUEST_ID_RE.test(guestId)) return { kind: 'guest', id: guestId };
   return null;
-}
-
-/** daily_sessions owner columns for `.match()` / inserts. */
-export function ownerOf(player: Player): { user_id: string } | { guest_id: string } {
-  return player.kind === 'user' ? { user_id: player.id } : { guest_id: player.id };
 }
 
 /**

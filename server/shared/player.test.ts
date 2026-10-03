@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { identifyPlayer, ownerOf, rateLimitKey, targetSeed } from './player';
+import { identifyPlayer, rateLimitKey, targetSeed } from './player';
 
 describe('identifyPlayer', () => {
   it('prefers the signed-in subject over a guest id', () => {
@@ -23,11 +23,6 @@ describe('identifyPlayer', () => {
 describe('player helpers', () => {
   const user = { kind: 'user' as const, id: 'u1' };
   const guest = { kind: 'guest' as const, id: 'g1234567' };
-
-  it('maps owners to the right session column', () => {
-    expect(ownerOf(user)).toEqual({ user_id: 'u1' });
-    expect(ownerOf(guest)).toEqual({ guest_id: 'g1234567' });
-  });
 
   it('namespaces guest target seeds away from user ids', () => {
     expect(targetSeed(user)).toBe('u1');

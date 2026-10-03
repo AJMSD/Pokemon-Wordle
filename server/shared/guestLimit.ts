@@ -1,4 +1,4 @@
-import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import type { Db } from '../db.ts';
 import { checkRateLimit } from './rateLimit.ts';
 
 // New guest games per client IP per day. Guest ids are free to mint, so this
@@ -12,7 +12,7 @@ export function getClientIP(req: Request): string {
 }
 
 /** Counts one new guest session for this IP; false once the daily cap is hit. */
-export async function guestSessionAllowed(admin: SupabaseClient, ip: string): Promise<boolean> {
-  const { allowed } = await checkRateLimit(admin, `guest-new-session:ip:${ip}`, GUEST_SESSIONS_PER_IP_PER_DAY, 86400);
+export async function guestSessionAllowed(db: Db, ip: string): Promise<boolean> {
+  const { allowed } = await checkRateLimit(db, `guest-new-session:ip:${ip}`, GUEST_SESSIONS_PER_IP_PER_DAY, 86400);
   return allowed;
 }

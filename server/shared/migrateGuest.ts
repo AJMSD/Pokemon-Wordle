@@ -1,4 +1,4 @@
-import { POKEMON_NAMES } from '../../../src/data/pokemonNames.ts';
+import { POKEMON_NAMES } from '../../src/data/pokemonNames.ts';
 import { normalizeName } from './letterMatch.ts';
 
 export const MAX_GUESSES = 10;
