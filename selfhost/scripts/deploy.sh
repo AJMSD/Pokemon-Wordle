@@ -96,10 +96,11 @@ fi
 
 docker compose up -d --remove-orphans
 
-# Reload nginx before anything depends on new routes/listeners.
+# Restart (not reload) nginx on config changes: a reload that changes a
+# rate-limit zone is refused at runtime and silently keeps the old config.
 if changed "${1:-}" selfhost/nginx; then
   docker compose exec -T gateway nginx -t
-  docker compose exec -T gateway nginx -s reload
+  docker compose restart gateway
 fi
 
 if changed "${1:-}" server src/logic src/data db; then

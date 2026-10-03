@@ -14,7 +14,8 @@ test.describe.configure({ mode: 'serial' })
 function lastLink(to: string, param: 'verify' | 'reset'): string {
   const lines = readFileSync(MAIL_LOG!, 'utf8').split('\n').filter((l) => l.includes('"fn":"mailer"'))
   for (const line of lines.reverse()) {
-    const mail = JSON.parse(line) as { to: string; text: string }
+    let mail: { to: string; text: string }
+    try { mail = JSON.parse(line.slice(line.indexOf('{'))) } catch { continue } // log prefixes / partial lines
     const match = mail.to === to && mail.text.match(new RegExp(`https?://\\S+[?&]${param}=[\\w%-]+`))
     if (match) return match[0]
   }

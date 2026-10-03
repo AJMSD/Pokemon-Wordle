@@ -1,4 +1,0 @@
-# Minimal CLI config. The only consumer is selfhost/scripts/deploy.sh, which
-# runs `supabase migration up --db-url ...` to apply supabase/migrations/ to the
-# self-hosted database on ajmsd. No hosted project is linked.
-project_id = "wurmple"

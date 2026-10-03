@@ -47,7 +47,7 @@ if [[ "$mode" == "--finalize" ]]; then
     [[ -z "$(container_of "$svc")" ]] || die "old '$svc' container still exists; is the old stack running?"
   done
   docker volume rm wurmple_db-data wurmple_db-config 2>/dev/null || true
-  rm -rf "$selfhost/.env.supabase.bak" "$selfhost/site.supabase.bak"
+  rm -rf "$selfhost/.env.old-stack.bak" "$selfhost/site.old-stack.bak"
   for image in supabase/postgres:17.6.1.136 supabase/gotrue:v2.196.0 supabase/edge-runtime:v1.76.2 postgrest/postgrest:v14.17; do
     docker image rm "$image" 2>/dev/null && say "removed image $image" || true
   done
@@ -235,13 +235,13 @@ rollback() {
   set +e
   cd "$repo"
   "${compose[@]}" rm -sf api >/dev/null 2>&1
-  if [[ -f "$selfhost/.env.supabase.bak" ]]; then mv -f "$selfhost/.env.supabase.bak" "$selfhost/.env"; fi
-  if [[ -d "$selfhost/site.supabase.bak" ]]; then
-    rsync -a --delete "$selfhost/site.supabase.bak/" "$selfhost/site/" && rm -rf "$selfhost/site.supabase.bak"
+  if [[ -f "$selfhost/.env.old-stack.bak" ]]; then mv -f "$selfhost/.env.old-stack.bak" "$selfhost/.env"; fi
+  if [[ -d "$selfhost/site.old-stack.bak" ]]; then
+    rsync -a --delete "$selfhost/site.old-stack.bak/" "$selfhost/site/" && rm -rf "$selfhost/site.old-stack.bak"
   fi
   git reset -q --hard "$old_commit"
   docker compose -f "$selfhost/docker-compose.yml" up -d --remove-orphans
-  docker compose -f "$selfhost/docker-compose.yml" exec -T gateway nginx -s reload
+  docker compose -f "$selfhost/docker-compose.yml" restart gateway
   say "rolled back to $old_commit. The new database volume (wurmple_pgdata) was left for inspection; the next cutover attempt recreates it."
   rm -rf "$work"
 }
@@ -255,8 +255,8 @@ say "full backup: selfhost/backups/pre-cutover-$ts.dump ($(du -h "$selfhost/back
 
 stage="checkout"
 git merge -q --ff-only "$ref"
-cp -p "$selfhost/.env" "$selfhost/.env.supabase.bak"
-convert_env "$selfhost/.env.supabase.bak" "$selfhost/.env.new"
+cp -p "$selfhost/.env" "$selfhost/.env.old-stack.bak"
+convert_env "$selfhost/.env.old-stack.bak" "$selfhost/.env.new"
 mv -f "$selfhost/.env.new" "$selfhost/.env"
 chmod 600 "$selfhost/.env"
 set -a; API_URL="$(grep -E '^API_URL=' "$selfhost/.env" | tail -1 | cut -d= -f2- | sed -E "s/^['\"]|['\"]$//g")"; set +a
@@ -293,7 +293,7 @@ curl -fsS "$api_local/v1/health" >/dev/null
 
 stage="site"
 mkdir -p "$selfhost/site"
-rsync -a --delete "$selfhost/site/" "$selfhost/site.supabase.bak/"
+rsync -a --delete "$selfhost/site/" "$selfhost/site.old-stack.bak/"
 rsync -a --delete "$selfhost/.build/" "$selfhost/site/"
 
 stage="smoke test"
@@ -308,12 +308,12 @@ trap - EXIT
 rm -rf "$work"
 cat <<EOF
 
-[$(date -Is)] CUTOVER DONE. The old database volume, .env.supabase.bak and
-site.supabase.bak are kept for rollback. Next:
+[$(date -Is)] CUTOVER DONE. The old database volume, .env.old-stack.bak and
+site.old-stack.bak are kept for rollback. Next:
   1. Check the site, sign in with an existing account.
   2. Rollback, if ever needed:
-       cd $repo && git reset --hard $old_commit && mv selfhost/.env.supabase.bak selfhost/.env &&
-       rsync -a --delete selfhost/site.supabase.bak/ selfhost/site/ &&
+       cd $repo && git reset --hard $old_commit && mv selfhost/.env.old-stack.bak selfhost/.env &&
+       rsync -a --delete selfhost/site.old-stack.bak/ selfhost/site/ &&
        docker compose -f selfhost/docker-compose.yml up -d --remove-orphans &&
        rm selfhost/.cutover-done
      (data written after the cutover would be lost)

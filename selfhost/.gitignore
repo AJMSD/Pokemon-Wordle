@@ -7,5 +7,5 @@ backups/
 *.log
 .cleanup-stamp
 .cutover-done
-.env.supabase.bak
-site.supabase.bak/
+.env.old-stack.bak
+site.old-stack.bak/

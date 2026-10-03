@@ -1,8 +1,8 @@
 # Temporary Email Blocklist
 
-Source: `supabase/functions/validate-email/index.ts`
+Source: `server/auth/disposableDomains.ts` (checked at signup)
 
-The `validate-email` Edge Function blocks sign-ups by taking the email domain after `@`, lowercasing it, and checking for an exact match in `DISPOSABLE_DOMAINS`.
+`POST /v1/auth/signup` rejects sign-ups by taking the email domain after `@`, lowercasing it, and checking for an exact match in `DISPOSABLE_DOMAINS`.
 
 ## Summary
 

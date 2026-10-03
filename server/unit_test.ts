@@ -68,7 +68,7 @@ Deno.test('passwords: bcrypt round trip and $2a$ hashes from the old auth server
   const hash = await hashPassword('pikachu123');
   assert(await verifyPassword('pikachu123', hash));
   assert(!(await verifyPassword('wrong-pass', hash)));
-  // bcryptjs 2.x emits $2a$ like GoTrue (Go's bcrypt) did.
+  // bcryptjs 2.x emits $2a$, like the hashes carried over from the old auth server.
   const legacy = bcrypt.hashSync('legacy-pass', 10);
   assert(legacy.startsWith('$2a$10$'));
   assert(await verifyPassword('legacy-pass', legacy));

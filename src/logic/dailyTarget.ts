@@ -1,4 +1,4 @@
-// Daily target selection, shared by the client and the edge functions.
+// Daily target selection, shared by the client and the API server.
 // Pure module: no imports, so Deno can load it straight from src/.
 
 // National dex ids 1..POKEMON_COUNT. Never change this without a remap:
