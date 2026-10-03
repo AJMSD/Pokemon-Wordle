@@ -4,7 +4,7 @@
 #
 #   cutover.sh --dry-run    Rehearsal. Exports the live data into a throwaway
 #                           copy of the new stack (compose project
-#                           "wurmple-dryrun", separate git worktree), migrates,
+#                           "<project>-dryrun", separate git worktree), migrates,
 #                           imports and checks row counts, then deletes it.
 #                           The live checkout and containers are not touched.
 #   cutover.sh              The real thing (~1 minute of API downtime). Rolls
@@ -13,7 +13,13 @@
 #                           the old database volume, backups of .env/site, and
 #                           the old images.
 #
-# Env: REPO (default ~/Code/Pokemon-Wordle), CUTOVER_REF (default origin/no-supabase).
+# The new stack is built, migrated and loaded from a separate git worktree;
+# the live checkout only moves forward once the old API is stopped and the
+# data is in. Old containers' bind-mounted files therefore never disappear
+# while they run, and nothing ever docker-cp's into an old container.
+#
+# Env: REPO (default ~/Code/Pokemon-Wordle), CUTOVER_REF (default origin/no-supabase),
+#      CUTOVER_PROJECT (compose project, default wurmple; for rehearsals).
 set -euo pipefail
 
 mode="${1:-run}"
@@ -21,6 +27,7 @@ case "$mode" in --dry-run|run|--finalize) ;; *) echo "usage: $0 [--dry-run|--fin
 
 repo="${REPO:-$HOME/Code/Pokemon-Wordle}"
 ref="${CUTOVER_REF:-origin/no-supabase}"
+project="${CUTOVER_PROJECT:-wurmple}"
 selfhost="$repo/selfhost"
 marker="$selfhost/.cutover-done"
 ts="$(date +%Y%m%d_%H%M%S)"
@@ -31,12 +38,12 @@ exec > >(tee -a "$log") 2>&1
 say() { echo "[$(date -Is)] $*"; }
 die() { say "ERROR: $*"; exit 1; }
 
-say "=== cutover $mode (ref $ref) ==="
+say "=== cutover $mode (project $project, ref $ref) ==="
 cd "$repo"
 
 # Containers of the live compose project, by service name.
 container_of() {
-  docker ps -aq --filter "label=com.docker.compose.project=wurmple" \
+  docker ps -aq --filter "label=com.docker.compose.project=$project" \
     --filter "label=com.docker.compose.service=$1" | head -1
 }
 
@@ -46,20 +53,21 @@ if [[ "$mode" == "--finalize" ]]; then
   for svc in db auth rest functions; do
     [[ -z "$(container_of "$svc")" ]] || die "old '$svc' container still exists; is the old stack running?"
   done
-  docker volume rm wurmple_db-data wurmple_db-config wurmple_deno-cache 2>/dev/null || true
+  docker volume rm "${project}_db-data" "${project}_db-config" "${project}_deno-cache" 2>/dev/null || true
   rm -rf "$selfhost/.env.old-stack.bak" "$selfhost/site.old-stack.bak"
   for image in supabase/postgres:17.6.1.136 supabase/gotrue:v2.196.0 supabase/edge-runtime:v1.76.2 postgrest/postgrest:v14.17; do
     docker image rm "$image" 2>/dev/null && say "removed image $image" || true
   done
-  say "finalized. Remaining wurmple volumes:"
-  docker volume ls --format '{{.Name}}' | grep '^wurmple' || true
+  say "finalized. Remaining $project volumes:"
+  docker volume ls --format '{{.Name}}' | grep "^${project}_" || true
   exit 0
 fi
 
 # --------------------------------------------------------------- preflight --
 [[ ! -f "$marker" ]] || die "already cut over ($marker exists)"
 [[ -f "$selfhost/.env" ]] || die "missing $selfhost/.env"
-old_db="$(docker ps -q --filter "label=com.docker.compose.project=wurmple" --filter "label=com.docker.compose.service=db")"
+[[ -z "$(git status --porcelain --untracked-files=no)" ]] || die "live checkout has local changes; fix them first"
+old_db="$(docker ps -q --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=db")"
 [[ -n "$old_db" ]] || die "old db container is not running"
 [[ "$(docker inspect -f '{{.Config.Image}}' "$old_db")" == supabase/postgres:* ]] || die "db container is not the old supabase/postgres image"
 avail_kb="$(df -Pk "$selfhost" | awk 'NR==2 {print $4}')"
@@ -72,8 +80,9 @@ flock -n 9 || die "a deploy is running; try again in a minute"
 git fetch -q origin
 git rev-parse -q --verify "$ref^{commit}" >/dev/null || die "unknown ref $ref"
 old_commit="$(git rev-parse HEAD)"
-git merge-base --is-ancestor "$old_commit" "$ref" || die "$ref does not contain the current checkout ($old_commit)"
-say "old commit $old_commit, new commit $(git rev-parse "$ref")"
+new_commit="$(git rev-parse "$ref")"
+git merge-base --is-ancestor "$old_commit" "$new_commit" || die "$ref does not contain the current checkout ($old_commit)"
+say "old commit $old_commit, new commit $new_commit"
 
 # ------------------------------------------------------------------ helpers --
 old_psql() { docker exec -i "$old_db" psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 "$@"; }
@@ -114,32 +123,35 @@ SQL
 }
 
 # Copies every table out of the old database in one consistent snapshot.
+# Files are streamed out with `docker exec cat` (never `docker cp`, which
+# re-mounts the container's binds).
 export_old() {
-  local dir="$1" in=/tmp/cutover-export
+  local dir="$1" in=/tmp/cutover-export t
   docker exec -u root "$old_db" sh -c "rm -rf $in && mkdir -m 777 $in"
   {
     echo "begin isolation level repeatable read read only;"
-    local counts=() t
+    local counts=()
     for t in "${tables[@]}"; do
       echo "copy ($(export_query "$t")) to '$in/$t.csv' csv header;"
       counts+=("select '$t' as t, count(*) from ($(export_query "$t")) x")
     done
-    local IFS=$'\n'
     echo "copy ($(printf '%s\nunion all\n' "${counts[@]}" | sed '$d')) to '$in/counts.csv' csv;"
     echo "commit;"
   } | old_psql -q
   mkdir -p "$dir"
-  docker cp -q "$old_db:$in/." "$dir/"
+  ( umask 077
+    for t in "${tables[@]}" counts; do
+      docker exec "$old_db" cat "$in/$t.csv" > "$dir/$t.csv"
+    done )
   docker exec -u root "$old_db" rm -rf "$in"
-  chmod 600 "$dir"/*.csv
   say "exported: $(tr '\n' ' ' < "$dir/counts.csv")"
 }
 
 # Imports the CSVs into the new database (one transaction) and checks counts.
 import_new() {
   local dir="$1" in=/tmp/cutover-import pg t
-  shift
   pg="$("${compose[@]}" ps -q postgres)"
+  [[ -n "$pg" ]] || die "new postgres container not found"
   docker exec -u root "$pg" sh -c "rm -rf $in && mkdir -m 755 $in"
   docker cp -q "$dir/." "$pg:$in/"
   docker exec -u root "$pg" chmod -R a+r "$in"
@@ -156,12 +168,11 @@ import_new() {
   } | docker exec -i "$pg" psql -U postgres -d wurmple -v ON_ERROR_STOP=1 -q
   docker exec -u root "$pg" rm -rf "$in"
 
-  local bad=0 name want got
+  local bad=0 name want got odd
   while IFS=, read -r name want; do
     got="$(docker exec "$pg" psql -U postgres -d wurmple -tAc "select count(*) from $name")"
     if [[ "$got" == "$want" ]]; then say "  $name: $got rows ok"; else say "  $name: expected $want, got $got"; bad=1; fi
   done < "$dir/counts.csv"
-  local odd
   odd="$(docker exec "$pg" psql -U postgres -d wurmple -tAc \
     "select count(*) from users where password_hash is not null and password_hash !~ '^\\\$2[aby]\\\$'")"
   [[ "$odd" == 0 ]] || { say "  $odd password hashes are not bcrypt"; bad=1; }
@@ -172,36 +183,44 @@ import_new() {
 convert_env() {
   local old="$1" new="$2" line key have_salt=0
   grep -qE '^TARGET_SALT=.+' "$old" && have_salt=1
-  umask 077
-  {
-    echo "# Converted from the old stack's .env by cutover.sh on $(date -I)."
-    while IFS= read -r line || [[ -n "$line" ]]; do
-      line="${line%$'\r'}"
-      key="${line%%=*}"
-      case "$key" in
-        POSTGRES_PASSWORD|SITE_URL|SMTP_ADMIN_EMAIL|SMTP_HOST|SMTP_PORT|SMTP_USER|SMTP_PASS|SMTP_SENDER_NAME|GOOGLE_ENABLED|GOOGLE_CLIENT_ID|GOOGLE_SECRET|MAIL_MODE)
-          echo "$line" ;;
-        TARGET_SALT) [[ $have_salt == 1 ]] && echo "$line" ;;
-        # Per-user targets were salted with JWT_SECRET when TARGET_SALT was unset.
-        JWT_SECRET) [[ $have_salt == 0 ]] && echo "TARGET_SALT=${line#JWT_SECRET=}" ;;
-        API_EXTERNAL_URL) echo "API_URL=${line#API_EXTERNAL_URL=}" ;;
-      esac
-    done < "$old"
-  } > "$new"
+  ( umask 077
+    {
+      echo "# Converted from the old stack's .env by cutover.sh on $(date -I)."
+      while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%$'\r'}"
+        key="${line%%=*}"
+        case "$key" in
+          POSTGRES_PASSWORD|SITE_URL|SMTP_ADMIN_EMAIL|SMTP_HOST|SMTP_PORT|SMTP_USER|SMTP_PASS|SMTP_SENDER_NAME|GOOGLE_ENABLED|GOOGLE_CLIENT_ID|GOOGLE_SECRET|MAIL_MODE|GATEWAY_API_PORT|GATEWAY_SITE_PORT)
+            echo "$line" ;;
+          TARGET_SALT) [[ $have_salt == 1 ]] && echo "$line" ;;
+          # Per-user targets were salted with JWT_SECRET when TARGET_SALT was unset.
+          JWT_SECRET) [[ $have_salt == 0 ]] && echo "TARGET_SALT=${line#JWT_SECRET=}" ;;
+          API_EXTERNAL_URL) echo "API_URL=${line#API_EXTERNAL_URL=}" ;;
+        esac
+      done < "$old"
+    } > "$new" )
   for key in POSTGRES_PASSWORD TARGET_SALT API_URL SITE_URL; do
     grep -qE "^$key=.+" "$new" || die "converted .env has no $key"
   done
 }
+
+env_value() { grep -E "^$1=" "$2" | tail -1 | cut -d= -f2- | sed -E "s/^['\"]|['\"]$//g"; }
 
 migrate_new() {
   "${compose[@]}" run --rm -T api run --config=server/deno.json --frozen \
     --allow-net --allow-env --allow-sys --allow-read=/app server/migrate.ts
 }
 
+# Separate checkout of the new code; compose runs from it until the switch.
+tree="$work/tree"
+git worktree add -q --detach "$tree" "$new_commit"
+trap 'git -C "$repo" worktree remove --force "$tree" >/dev/null 2>&1; rm -rf "$work"' EXIT
+convert_env "$selfhost/.env" "$tree/selfhost/.env"
+say "converted .env keys: $(cut -d= -f1 "$tree/selfhost/.env" | grep -v '^#' | tr '\n' ' ')"
+
 # ----------------------------------------------------------------- dry run --
 if [[ "$mode" == "--dry-run" ]]; then
-  tree="$work/tree"
-  compose=(docker compose -p wurmple-dryrun -f "$tree/selfhost/docker-compose.yml")
+  compose=(docker compose -p "$project-dryrun" -f "$tree/selfhost/docker-compose.yml")
   cleanup_dry() {
     "${compose[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
     git -C "$repo" worktree remove --force "$tree" >/dev/null 2>&1 || true
@@ -209,9 +228,6 @@ if [[ "$mode" == "--dry-run" ]]; then
   }
   trap cleanup_dry EXIT
 
-  git worktree add -q --detach "$tree" "$ref"
-  convert_env "$selfhost/.env" "$tree/selfhost/.env"
-  say "converted .env keys: $(cut -d= -f1 "$tree/selfhost/.env" | grep -v '^#' | tr '\n' ' ')"
   export_old "$work/export"
   "${compose[@]}" up -d --wait postgres
   migrate_new
@@ -224,8 +240,28 @@ if [[ "$mode" == "--dry-run" ]]; then
 fi
 
 # ---------------------------------------------------------------- real run --
-compose=(docker compose -f "$selfhost/docker-compose.yml")
+compose=(docker compose -p "$project" -f "$tree/selfhost/docker-compose.yml")
 stage="start"
+# CUTOVER_FAIL_AT=<stage> injects a failure (rehearsals of the rollback).
+enter_stage() {
+  stage="$1"
+  [[ "${CUTOVER_FAIL_AT:-}" != "$1" ]] || die "injected failure at '$1'"
+}
+switched=0   # live checkout moved to the new commit
+stopped=()   # old containers we stopped
+
+# Docker recreates missing bind sources as root-owned directories; hand any
+# root-owned paths in the checkout back to its owner so git can rewrite them.
+fix_ownership() {
+  local uid gid
+  uid="$(stat -c %u "$repo")"; gid="$(stat -c %g "$repo")"
+  docker run --rm -v "$repo:/r" alpine sh -c "
+    for f in /r/selfhost/volumes/db/jwt.sql /r/selfhost/volumes/db/roles.sql; do
+      [ -d \"\$f\" ] && rm -rf \"\$f\"
+    done
+    find /r -path /r/node_modules -prune -o -path /r/.git -prune -o -path /r/selfhost/backups -prune \
+      -o -user root -exec chown $uid:$gid {} +" || true
+}
 
 rollback() {
   local rc=$?
@@ -234,69 +270,80 @@ rollback() {
   say "FAILED during '$stage' (exit $rc); rolling back to the old stack"
   set +e
   cd "$repo"
-  "${compose[@]}" rm -sf api >/dev/null 2>&1
-  if [[ -f "$selfhost/.env.old-stack.bak" ]]; then mv -f "$selfhost/.env.old-stack.bak" "$selfhost/.env"; fi
-  if [[ -d "$selfhost/site.old-stack.bak" ]]; then
-    rsync -a --delete "$selfhost/site.old-stack.bak/" "$selfhost/site/" && rm -rf "$selfhost/site.old-stack.bak"
+  # New-stack containers go; their volume (pgdata) is kept for inspection.
+  for svc in api postgres; do
+    c="$(container_of "$svc")"; [[ -z "$c" ]] || docker rm -f "$c" >/dev/null
+  done
+  if (( switched )); then
+    [[ -f "$selfhost/.env.old-stack.bak" ]] && mv -f "$selfhost/.env.old-stack.bak" "$selfhost/.env"
+    if [[ -d "$selfhost/site.old-stack.bak" ]]; then
+      rsync -a --delete "$selfhost/site.old-stack.bak/" "$selfhost/site/" && rm -rf "$selfhost/site.old-stack.bak"
+    fi
+    fix_ownership
+    git reset -q --hard "$old_commit" || say "git reset failed; fix the checkout by hand"
+    # Recreate everything so no old container keeps a stale bind mount.
+    docker compose -p "$project" -f "$selfhost/docker-compose.yml" up -d --remove-orphans --force-recreate
+  else
+    # Live checkout untouched: just bring back what we stopped.
+    for c in "${stopped[@]}"; do docker start "$c" >/dev/null; done
   fi
-  git reset -q --hard "$old_commit"
-  docker compose -f "$selfhost/docker-compose.yml" up -d --remove-orphans
-  docker compose -f "$selfhost/docker-compose.yml" restart gateway
-  say "rolled back to $old_commit. The new database volume (wurmple_pgdata) was left for inspection; the next cutover attempt recreates it."
+  git -C "$repo" worktree remove --force "$tree" >/dev/null 2>&1
+  say "rolled back to $old_commit. Check: curl -s http://127.0.0.1:54321/functions/v1/health"
   rm -rf "$work"
 }
 trap rollback EXIT
 
-stage="backup"
+enter_stage "backup"
 mkdir -p "$selfhost/backups"
 docker exec "$old_db" pg_dump -U supabase_admin -d postgres -Fc > "$selfhost/backups/pre-cutover-$ts.dump"
 chmod 600 "$selfhost/backups/pre-cutover-$ts.dump"
 say "full backup: selfhost/backups/pre-cutover-$ts.dump ($(du -h "$selfhost/backups/pre-cutover-$ts.dump" | cut -f1))"
 
-stage="checkout"
-git merge -q --ff-only "$ref"
-cp -p "$selfhost/.env" "$selfhost/.env.old-stack.bak"
-convert_env "$selfhost/.env.old-stack.bak" "$selfhost/.env.new"
-mv -f "$selfhost/.env.new" "$selfhost/.env"
-chmod 600 "$selfhost/.env"
-set -a; API_URL="$(grep -E '^API_URL=' "$selfhost/.env" | tail -1 | cut -d= -f2- | sed -E "s/^['\"]|['\"]$//g")"; set +a
-
-stage="build"
-VITE_API_URL="$API_URL" npm run build -- --outDir "$selfhost/.build" --emptyOutDir
+enter_stage "build"
+ln -s "$repo/node_modules" "$tree/node_modules"
+( cd "$tree" && VITE_API_URL="$(env_value API_URL "$tree/selfhost/.env")" \
+    npm run build -- --outDir "$work/site" --emptyOutDir )
 
 # A leftover new-database volume can only come from an earlier failed attempt.
-stage="fresh database"
-"${compose[@]}" rm -sf postgres >/dev/null 2>&1 || true
-docker volume rm wurmple_pgdata >/dev/null 2>&1 || true
+enter_stage "fresh database"
+docker volume rm "${project}_pgdata" >/dev/null 2>&1 || true
 "${compose[@]}" up -d --wait postgres
 migrate_new
 
 # From here the API is down: stop everything that writes to the old database.
-stage="stop old API"
+enter_stage "stop old API"
 for svc in functions auth rest; do
   c="$(container_of "$svc")"
-  [[ -z "$c" ]] || docker stop "$c" >/dev/null
+  if [[ -n "$c" ]]; then docker stop "$c" >/dev/null; stopped+=("$c"); fi
 done
 say "old API stopped"
 
-stage="export"
+enter_stage "export"
 export_old "$work/export"
-stage="import"
+enter_stage "import"
 import_new "$work/export"
 
-stage="start new stack"
-"${compose[@]}" up -d --remove-orphans --wait api
+enter_stage "switch checkout"
+cp -p "$selfhost/.env" "$selfhost/.env.old-stack.bak"
+switched=1
+git merge -q --ff-only "$new_commit"
+cp -p "$tree/selfhost/.env" "$selfhost/.env"
+chmod 600 "$selfhost/.env"
+compose=(docker compose -p "$project" -f "$selfhost/docker-compose.yml")
+
+enter_stage "start new stack"
+"${compose[@]}" up -d --remove-orphans --wait postgres api
 "${compose[@]}" up -d --force-recreate --wait gateway
-api_port="$(grep -E '^GATEWAY_API_PORT=' "$selfhost/.env" | cut -d= -f2)"
-api_local="http://127.0.0.1:${api_port:-54321}"
+api_local="http://127.0.0.1:$(env_value GATEWAY_API_PORT "$selfhost/.env" || true)"
+[[ "$api_local" != *: ]] || api_local="http://127.0.0.1:54321"
 curl -fsS "$api_local/v1/health" >/dev/null
 
-stage="site"
+enter_stage "site"
 mkdir -p "$selfhost/site"
 rsync -a --delete "$selfhost/site/" "$selfhost/site.old-stack.bak/"
-rsync -a --delete "$selfhost/.build/" "$selfhost/site/"
+rsync -a --delete "$work/site/" "$selfhost/site/"
 
-stage="smoke test"
+enter_stage "smoke test"
 today="$(TZ=Asia/Tokyo date +%F)"
 curl -fsS "$api_local/v1/get-session?puzzle_date_key=$today&guest_id=cutover-smoke-$ts" | jq -e '.completion_state == "playing"' >/dev/null
 "${compose[@]}" exec -T postgres psql -U postgres -d wurmple -qc "delete from daily_sessions where guest_id = 'cutover-smoke-$ts'"
@@ -305,17 +352,17 @@ say "smoke test ok"
 
 touch "$marker"
 trap - EXIT
+git worktree remove --force "$tree" >/dev/null 2>&1 || true
 rm -rf "$work"
 cat <<EOF
 
 [$(date -Is)] CUTOVER DONE. The old database volume, .env.old-stack.bak and
 site.old-stack.bak are kept for rollback. Next:
   1. Check the site, sign in with an existing account.
-  2. Rollback, if ever needed:
+  2. Rollback, if ever needed (data written after the cutover would be lost):
        cd $repo && git reset --hard $old_commit && mv selfhost/.env.old-stack.bak selfhost/.env &&
        rsync -a --delete selfhost/site.old-stack.bak/ selfhost/site/ &&
-       docker compose -f selfhost/docker-compose.yml up -d --remove-orphans &&
+       docker compose -f selfhost/docker-compose.yml up -d --remove-orphans --force-recreate &&
        rm selfhost/.cutover-done
-     (data written after the cutover would be lost)
   3. Once happy: bash $0 --finalize
 EOF
