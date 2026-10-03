@@ -9,10 +9,9 @@
 import { randomUUID } from 'node:crypto';
 
 const [endpoint = 'session', concurrency = '10', seconds = '10'] = process.argv.slice(2);
-const base = process.env.BASE ?? 'http://127.0.0.1:54321/functions/v1';
-const anon = process.env.ANON_KEY;
+const base = process.env.BASE ?? 'http://127.0.0.1:54321/v1';
 const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
-const headers = { Authorization: `Bearer ${anon}`, 'Content-Type': 'application/json' };
+const headers = { 'Content-Type': 'application/json' };
 // Spread requests over fake client IPs so per-IP limits don't mask backend capacity.
 // Cloudflare rejects a client-set CF-Connecting-IP, so only spoof against the local gateway.
 const spoofIp = /\/\/(127\.0\.0\.1|localhost)[:/]/.test(base);

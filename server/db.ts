@@ -1,7 +1,15 @@
 import postgres from 'postgres';
 
-// One pool for the process. DATABASE_URL e.g. postgres://postgres:pw@postgres:5432/wurmple
-export const sql = postgres(Deno.env.get('DATABASE_URL') ?? 'postgres://postgres@localhost:5432/wurmple', {
+// Connection settings: DATABASE_URL, or the libpq-style PGHOST / PGPORT /
+// PGDATABASE / PGUSER / PGPASSWORD variables (used by docker-compose, so the
+// password never needs URL-encoding).
+export function connect(options: postgres.Options<Record<string, postgres.PostgresType>> = {}) {
+  const url = Deno.env.get('DATABASE_URL');
+  return url ? postgres(url, options) : postgres(options);
+}
+
+// One pool for the process.
+export const sql = connect({
   max: Number(Deno.env.get('DB_POOL_SIZE') ?? 10),
   idle_timeout: 60,
   onnotice: () => {},

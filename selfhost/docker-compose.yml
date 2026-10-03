@@ -1,10 +1,10 @@
-# Lean self-hosted backend for Wurmple (Pokémon Wordle).
-# Only the services the app uses: Postgres, GoTrue (auth), PostgREST (used by
-# edge functions via supabase-js), Edge Runtime, and an nginx gateway that also
-# serves the built frontend. Realtime, Storage, Studio, analytics, imgproxy,
-# and the pooler are intentionally omitted to keep idle RAM low.
+# Self-hosted backend for Wurmple (Pokémon Wordle):
+#   postgres  plain Postgres 17
+#   api       the Deno API server in ../server (game + accounts)
+#   gateway   nginx: per-IP rate limits, the API, and the built frontend
 #
-# Ports are bound to 127.0.0.1 only; public traffic arrives via cloudflared.
+# Ports bind to 127.0.0.1 only; public traffic arrives via cloudflared.
+# GATEWAY_API_PORT / GATEWAY_SITE_PORT let a second copy (staging) run alongside.
 
 name: wurmple
 
@@ -16,37 +16,26 @@ x-logging: &default-logging
     max-file: "3"
 
 services:
-  db:
-    image: supabase/postgres:17.6.1.136
+  postgres:
+    image: postgres:17-alpine
     restart: unless-stopped
     logging: *default-logging
     mem_limit: 384m
-    ports:
-      - "127.0.0.1:54322:5432"
     volumes:
-      - ./volumes/db/roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:ro
-      - ./volumes/db/jwt.sql:/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql:ro
-      - db-data:/var/lib/postgresql/data
-      - db-config:/etc/postgresql-custom
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: wurmple
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "wurmple", "-h", "localhost"]
       interval: 5s
       timeout: 5s
       retries: 10
-      start_period: 120s
-    environment:
-      POSTGRES_HOST: /var/run/postgresql
-      PGPORT: 5432
-      POSTGRES_PORT: 5432
-      PGPASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      PGDATABASE: postgres
-      POSTGRES_DB: postgres
-      JWT_EXP: ${JWT_EXPIRY}
+      start_period: 30s
+      start_interval: 2s
     command:
       - postgres
-      - -c
-      - config_file=/etc/postgresql/postgresql.conf
       - -c
       - shared_buffers=64MB
       - -c
@@ -59,128 +48,61 @@ services:
       - max_connections=40
       - -c
       - max_wal_size=256MB
-      - -c
-      - log_min_messages=fatal
 
-  auth:
-    image: supabase/gotrue:v2.196.0
+  api:
+    image: denoland/deno:2.6.7
     restart: unless-stopped
     logging: *default-logging
-    mem_limit: 96m
+    mem_limit: 256m
     depends_on:
-      db:
+      postgres:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    environment:
-      GOTRUE_API_HOST: 0.0.0.0
-      GOTRUE_API_PORT: 9999
-      API_EXTERNAL_URL: ${API_EXTERNAL_URL}
-
-      GOTRUE_DB_DRIVER: postgres
-      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@db:5432/postgres
-      GOTRUE_DB_MAX_POOL_SIZE: 5
-
-      GOTRUE_SITE_URL: ${SITE_URL}
-      GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS}
-      GOTRUE_DISABLE_SIGNUP: "false"
-
-      GOTRUE_JWT_ADMIN_ROLES: service_role
-      GOTRUE_JWT_AUD: authenticated
-      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
-      GOTRUE_JWT_EXP: ${JWT_EXPIRY}
-      GOTRUE_JWT_SECRET: ${JWT_SECRET}
-      GOTRUE_JWT_ISSUER: ${API_EXTERNAL_URL}/auth/v1
-
-      GOTRUE_PASSWORD_MIN_LENGTH: 8
-      GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED: "true"
-      GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL: 10
-
-      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
-      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: "false"
-      GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
-      GOTRUE_MAILER_AUTOCONFIRM: "false"
-      GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED: "true"
-      # 12/hour caps auth email at 288/day, under Brevo free tier (300/day)
-      GOTRUE_RATE_LIMIT_EMAIL_SENT: 12
-      # Rate-limit per real client IP (set by Cloudflare), not per proxy
-      GOTRUE_RATE_LIMIT_HEADER: CF-Connecting-IP
-      GOTRUE_MAILER_EXTERNAL_HOSTS: wurmple-api.ajmsd.space
-
-      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL}
-      GOTRUE_SMTP_HOST: ${SMTP_HOST}
-      GOTRUE_SMTP_PORT: ${SMTP_PORT}
-      GOTRUE_SMTP_USER: ${SMTP_USER}
-      GOTRUE_SMTP_PASS: ${SMTP_PASS}
-      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME}
-      GOTRUE_MAILER_URLPATHS_INVITE: /auth/v1/verify
-      GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
-      GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
-      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /auth/v1/verify
-
-      GOTRUE_EXTERNAL_GOOGLE_ENABLED: ${GOOGLE_ENABLED}
-      GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-      GOTRUE_EXTERNAL_GOOGLE_SECRET: ${GOOGLE_SECRET}
-      GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: ${API_EXTERNAL_URL}/auth/v1/callback
-
-  rest:
-    image: postgrest/postgrest:v14.17
-    restart: unless-stopped
-    logging: *default-logging
-    mem_limit: 128m
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@db:5432/postgres
-      PGRST_DB_SCHEMAS: public
-      PGRST_DB_MAX_ROWS: 1000
-      PGRST_DB_EXTRA_SEARCH_PATH: public,extensions
-      PGRST_DB_ANON_ROLE: anon
-      PGRST_DB_POOL: 5
-      PGRST_JWT_SECRET: ${JWT_SECRET}
-      PGRST_DB_USE_LEGACY_GUCS: "false"
-      PGRST_APP_SETTINGS_JWT_EXP: ${JWT_EXPIRY}
-      PGRST_ADMIN_SERVER_PORT: 3001
-    # No healthcheck: `postgrest --ready` refuses server-host "!4" and the image has no shell.
-    command: ["postgrest"]
-
-  functions:
-    image: supabase/edge-runtime:v1.76.2
-    restart: unless-stopped
-    logging: *default-logging
-    mem_limit: 512m
-    depends_on:
-      - gateway
+    working_dir: /app
     volumes:
-      - ../supabase/functions:/home/deno/functions:ro
-      # Functions import shared game logic via ../../../src/logic/*
-      - ../src:/home/src:ro
-      - ./functions-main:/home/deno/main:ro
-      - deno-cache:/root/.cache/deno
+      - ../server:/app/server:ro
+      # Shared game logic and the Pokémon name list (imported as ../src/*).
+      - ../src:/app/src:ro
+      - ../db:/app/db:ro
+      - deno-cache:/deno-dir
     environment:
-      JWT_SECRET: ${JWT_SECRET}
-      SUPABASE_URL: http://gateway:8001 # internal, unthrottled listener
-      SUPABASE_PUBLIC_URL: ${API_EXTERNAL_URL}
-      SUPABASE_ANON_KEY: ${ANON_KEY}
-      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
-      # Optional override for the per-user target salt (defaults to JWT_SECRET
-      # in the functions); see RUNBOOK "Key rotation".
-      TARGET_SALT: ${TARGET_SALT:-}
-      VERIFY_JWT: "true"
-      # Functions reachable without a JWT (hosted equivalent: --no-verify-jwt)
-      PUBLIC_FUNCTIONS: health,validate-email
+      PGHOST: postgres
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: wurmple
+      DB_POOL_SIZE: 10
+      PORT: 8000
+      # Salt for per-user daily targets. Never change it: every player's
+      # Pokémon would change (see RUNBOOK "Secrets").
+      TARGET_SALT: ${TARGET_SALT:?set TARGET_SALT in .env}
+      SITE_URL: ${SITE_URL}
+      API_URL: ${API_URL}
+      MAIL_MODE: ${MAIL_MODE:-smtp}
+      SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_SENDER_NAME: ${SMTP_SENDER_NAME}
+      GOOGLE_ENABLED: ${GOOGLE_ENABLED:-false}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_SECRET: ${GOOGLE_SECRET:-}
+    command:
+      - run
+      - --config=server/deno.json
+      - --frozen
+      - --allow-net
+      - --allow-env
+      - --allow-sys
+      - --allow-read=/app
+      - server/main.ts
     healthcheck:
-      # TCP probe of the main service (no curl/wget assumed in the image).
-      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9000'"]
+      # The image has no curl/wget; deno itself does the probe.
+      test: ["CMD", "deno", "eval", "const r = await fetch('http://127.0.0.1:8000/v1/health'); Deno.exit(r.ok ? 0 : 1)"]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
-      start_period: 30s
-    command: ["start", "--main-service", "/home/deno/main"]
+      start_period: 120s
+      start_interval: 3s
 
   gateway:
     image: nginx:1.29-alpine
@@ -188,8 +110,8 @@ services:
     logging: *default-logging
     mem_limit: 32m
     ports:
-      - "127.0.0.1:54321:8000" # API  -> wurmple-api.ajmsd.space
-      - "127.0.0.1:54380:8080" # site -> wurmple.ajmsd.space
+      - "127.0.0.1:${GATEWAY_API_PORT:-54321}:8000" # API  -> wurmple-api.ajmsd.space
+      - "127.0.0.1:${GATEWAY_SITE_PORT:-54380}:8080" # site -> wurmple.ajmsd.space
     volumes:
       # Directory mount: single-file binds keep the old inode when git replaces the file.
       - ./nginx:/etc/nginx/conf.d:ro
@@ -201,6 +123,5 @@ services:
       retries: 3
 
 volumes:
-  db-data:
-  db-config:
+  pgdata:
   deno-cache:

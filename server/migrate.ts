@@ -1,7 +1,7 @@
 // Applies db/migrations/*.sql in filename order, each in its own transaction,
 // recording applied versions in schema_migrations. Safe to run repeatedly.
-//   deno task migrate            (DATABASE_URL from the environment)
-import postgres from 'postgres';
+//   deno task migrate     (DATABASE_URL or PGHOST/PGUSER/... from the environment)
+import { connect } from './db.ts';
 
 const MIGRATIONS_DIR = new URL('../db/migrations/', import.meta.url);
 // Arbitrary constant: serializes concurrent runs (two deploys at once).
@@ -16,8 +16,8 @@ export function pendingMigrations(files: string[], applied: Iterable<string>): s
     .filter((f) => !done.has(f.replace(/\.sql$/, '')));
 }
 
-export async function migrate(databaseUrl: string, dir: URL = MIGRATIONS_DIR): Promise<string[]> {
-  const sql = postgres(databaseUrl, { max: 1, onnotice: () => {} });
+export async function migrate(dir: URL = MIGRATIONS_DIR): Promise<string[]> {
+  const sql = connect({ max: 1, onnotice: () => {} });
   try {
     await sql`select pg_advisory_lock(${LOCK_ID})`;
     await sql`
@@ -52,10 +52,6 @@ export async function migrate(databaseUrl: string, dir: URL = MIGRATIONS_DIR): P
 }
 
 if (import.meta.main) {
-  const url = Deno.env.get('DATABASE_URL');
-  if (!url) {
-    console.error('DATABASE_URL must be set');
-    Deno.exit(1);
-  }
-  await migrate(url);
+  await migrate();
+  Deno.exit(0); // db.ts's idle pool would otherwise keep the process alive
 }

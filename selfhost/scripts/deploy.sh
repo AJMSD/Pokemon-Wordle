@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Pulls origin/master and deploys whatever changed: frontend build, DB
-# migrations, edge functions, and compose services. Safe to run from cron;
+# migrations, the API server, and compose services. Safe to run from cron;
 # does nothing when already up to date. Pass --force to redeploy anyway.
 set -euo pipefail
 
@@ -41,9 +41,9 @@ load_env "$selfhost/.env"
 stamp="$selfhost/.cleanup-stamp"
 today="$(date +%F)"
 if [[ "$(cat "$stamp" 2>/dev/null || true)" != "$today" ]]; then
-  if docker compose -f "$selfhost/docker-compose.yml" exec -T db \
-      psql -U postgres -h localhost -d postgres -v ON_ERROR_STOP=1 -qtc \
-      "select public.cleanup_stale_rows();" >/dev/null 2>&1; then
+  if docker compose -f "$selfhost/docker-compose.yml" exec -T postgres \
+      psql -U postgres -d wurmple -v ON_ERROR_STOP=1 -qtc \
+      "select cleanup_stale_rows();" >/dev/null 2>&1; then
     echo "$today" > "$stamp"
     echo "[$(date -Is)] cleanup_stale_rows ok"
   else
@@ -86,16 +86,12 @@ fi
 
 cd "$selfhost"
 
-# Migrate BEFORE (re)starting anything, so new function code never runs against
+# Migrate BEFORE (re)starting anything, so new API code never runs against
 # the old schema and a failed migration stops the deploy with old code live.
-if changed "${1:-}" supabase/migrations; then
-  docker compose up -d db
-  for _ in $(seq 1 60); do
-    docker compose exec -T db pg_isready -U postgres -h localhost -q && break
-    sleep 2
-  done
-  (cd "$repo" && npx supabase migration up \
-    --db-url "postgresql://postgres:${POSTGRES_PASSWORD}@127.0.0.1:54322/postgres")
+if changed "${1:-}" db/migrations; then
+  docker compose up -d --wait postgres
+  docker compose run --rm api run --config=server/deno.json --frozen \
+    --allow-net --allow-env --allow-sys --allow-read=/app server/migrate.ts
 fi
 
 docker compose up -d --remove-orphans
@@ -106,13 +102,13 @@ if changed "${1:-}" selfhost/nginx; then
   docker compose exec -T gateway nginx -s reload
 fi
 
-if changed "${1:-}" supabase/functions src/logic src/data selfhost/functions-main; then
-  docker compose restart functions
+if changed "${1:-}" server src/logic src/data db; then
+  docker compose restart api
 fi
 
 if changed "${1:-}" src public index.html package-lock.json vite.config.ts tailwind.config.js postcss.config.js; then
   cd "$repo"
-  VITE_API_URL="$API_EXTERNAL_URL" VITE_API_ANON_KEY="$ANON_KEY" \
+  VITE_API_URL="$API_URL" \
     npm run build -- --outDir "$selfhost/.build" --emptyOutDir
   mkdir -p "$selfhost/site"
   rsync -a --delete "$selfhost/.build/" "$selfhost/site/"

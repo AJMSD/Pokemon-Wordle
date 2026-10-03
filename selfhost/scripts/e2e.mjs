@@ -1,13 +1,17 @@
-// End-to-end smoke test against the public API: creates a throwaway confirmed
-// user, signs in, plays a guess, checks stats and row-level privacy, then
-// deletes the user. Run on ajmsd with selfhost/.env loaded:
-//   set -a; . selfhost/.env; set +a; node selfhost/scripts/e2e.mjs
-import { randomUUID } from 'node:crypto';
+// End-to-end smoke test against the public API: seeds a throwaway account (via
+// psql in the postgres container), signs in through the password-reset flow,
+// plays a guess, checks stats and that the old API paths are gone, then
+// deletes the account. Run on ajmsd from the repo root:
+//   node selfhost/scripts/e2e.mjs
+// API_URL / SITE_URL override the targets; COMPOSE_PROJECT_NAME selects a
+// non-default stack (e.g. staging).
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-const api = process.env.API_EXTERNAL_URL ?? 'https://wurmple-api.ajmsd.space';
-const admin = process.env.ADMIN_URL ?? 'http://127.0.0.1:54321'; // admin calls stay local
-const anon = process.env.ANON_KEY;
-const service = process.env.SERVICE_ROLE_KEY;
+const api = process.env.API_URL ?? 'https://wurmple-api.ajmsd.space';
+const site = process.env.SITE_URL ?? 'https://wurmple.ajmsd.space';
+const composeFile = fileURLToPath(new URL('../docker-compose.yml', import.meta.url));
 const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
 const stamp = Date.now().toString(36);
 const email = `e2e-${stamp}@ajmsd.space`;
@@ -19,12 +23,16 @@ function check(name, ok, detail = '') {
   if (!ok) failures += 1;
 }
 
-async function call(url, { method = 'GET', token = anon, body, headers = {} } = {}) {
-  const res = await fetch(url, {
+function psql(query) {
+  return execFileSync('docker', ['compose', '-f', composeFile, 'exec', '-T', 'postgres',
+    'psql', '-U', 'postgres', '-d', 'wurmple', '-v', 'ON_ERROR_STOP=1', '-qtAc', query], { encoding: 'utf8' }).trim();
+}
+
+async function call(path, { method = 'GET', token, body, headers = {} } = {}) {
+  const res = await fetch(`${api}${path}`, {
     method,
     headers: {
-      apikey: anon,
-      Authorization: `Bearer ${token}`,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(body ? { 'Content-Type': 'application/json' } : {}),
       ...headers,
     },
@@ -37,72 +45,71 @@ async function call(url, { method = 'GET', token = anon, body, headers = {} } = 
 }
 
 // Browser preflights (Node's fetch skips CORS, so check the headers directly).
-const site = process.env.SITE_URL ?? 'https://wurmple.ajmsd.space';
-for (const path of ['/auth/v1/user', '/auth/v1/token?grant_type=password', '/rest/v1/profiles', '/functions/v1/get-me']) {
+for (const path of ['/v1/get-me', '/v1/auth/login', '/v1/submit-guess']) {
   const res = await fetch(`${api}${path}`, {
     method: 'OPTIONS',
-    headers: {
-      Origin: site,
-      'Access-Control-Request-Method': 'GET',
-      'Access-Control-Request-Headers': 'apikey,authorization,content-type,x-client-info,x-supabase-api-version',
-    },
+    headers: { Origin: site, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'authorization,content-type' },
   });
   const allowed = res.headers.get('access-control-allow-origin');
-  check(`CORS preflight ${path.split('?')[0]}`, res.ok && (allowed === site || allowed === '*'), `status ${res.status}, allow-origin ${allowed}`);
+  check(`CORS preflight ${path}`, res.ok && allowed === site, `status ${res.status}, allow-origin ${allowed}`);
 }
+
+// The old auth/REST/functions paths no longer exist.
+for (const path of ['/functions/v1/get-me', '/auth/v1/user', '/rest/v1/profiles']) {
+  const res = await call(path);
+  check(`old path gone ${path}`, res.status === 404, `status ${res.status}`);
+}
+
+check('health', (await call('/v1/health')).status === 200);
+
+const guestId = `e2e-${randomUUID()}`;
+const guest = await call(`/v1/get-session?puzzle_date_key=${today}&guest_id=${guestId}`);
+check('guest get-session (no Authorization)', guest.status === 200 && guest.json.pokemon_name === undefined, `status ${guest.status}`);
 
 let userId;
 try {
-  const created = await call(`${admin}/auth/v1/admin/users`, {
-    method: 'POST', token: service, headers: { apikey: service },
-    body: { email, password, email_confirm: true },
-  });
-  userId = created.json?.id;
-  check('admin creates confirmed test user', created.status === 200 && !!userId, `status ${created.status}`);
+  userId = psql(`insert into users (email, email_verified_at) values ('${email}', now()) returning id`);
+  const resetToken = randomBytes(32).toString('base64url');
+  const hash = createHash('sha256').update(resetToken).digest('hex');
+  psql(`insert into auth_tokens (token_hash, user_id, kind, expires_at) values ('${hash}', '${userId}', 'reset', now() + interval '10 minutes')`);
+  check('seeded test user', /^[0-9a-f-]{36}$/.test(userId), userId);
 
-  const login = await call(`${api}/auth/v1/token?grant_type=password`, { method: 'POST', body: { email, password } });
-  const token = login.json?.access_token;
-  check('password sign-in via public API', login.status === 200 && !!token, `status ${login.status}`);
+  const reset = await call('/v1/auth/reset', { method: 'POST', body: { token: resetToken, password } });
+  check('password reset signs in', reset.status === 200 && !!reset.json.token, `status ${reset.status}`);
 
-  const profile = await call(`${api}/functions/v1/create-profile`, { method: 'POST', token, body: { username: `e2e${stamp}`.slice(0, 15) } });
-  check('create-profile', profile.status === 200 || profile.status === 201, `status ${profile.status}`);
+  const login = await call('/v1/auth/login', { method: 'POST', body: { email, password } });
+  const token = login.json?.token;
+  check('password sign-in', login.status === 200 && !!token, `status ${login.status}`);
 
-  const session = await call(`${api}/functions/v1/get-session?puzzle_date_key=${today}`, { token });
+  const profile = await call('/v1/create-profile', { method: 'POST', token, body: { username: `e2e${stamp}`.slice(0, 15) } });
+  check('create-profile', profile.status === 200, `status ${profile.status}`);
+
+  const session = await call(`/v1/get-session?puzzle_date_key=${today}`, { token });
   check('get-session', session.status === 200, `status ${session.status}`);
 
-  const guess = await call(`${api}/functions/v1/submit-guess`, { method: 'POST', token, body: { guess: 'pikachu', puzzle_date_key: today, session_version: session.json?.version } });
+  const guess = await call('/v1/submit-guess', { method: 'POST', token, body: { guess: 'pikachu', puzzle_date_key: today, session_version: session.json?.version } });
   check('submit-guess (today)', guess.status === 200, `status ${guess.status}`);
 
-  const stale = await call(`${api}/functions/v1/submit-guess`, { method: 'POST', token, body: { guess: 'eevee', puzzle_date_key: '2026-01-01' } });
+  const stale = await call('/v1/submit-guess', { method: 'POST', token, body: { guess: 'eevee', puzzle_date_key: '2026-01-01' } });
   check('submit-guess rejects past day', stale.status === 400, `status ${stale.status}`);
 
-  const me = await call(`${api}/functions/v1/get-me`, { token });
-  check('get-me returns own profile', me.status === 200 && !!me.json?.profile, `status ${me.status}`);
+  const me = await call('/v1/get-me', { token });
+  check('get-me returns own profile', me.status === 200 && me.json?.profile?.id === userId, `status ${me.status}`);
 
-  const balls = await call(`${api}/functions/v1/get-balls`, { token });
-  check('get-balls', balls.status === 200, `status ${balls.status}`);
+  const balls = await call('/v1/get-balls', { token });
+  check('get-balls', balls.status === 200 && !!balls.json.display_ball, `status ${balls.status}`);
 
-  const profiles = await call(`${api}/rest/v1/profiles?select=id`, { token });
-  check('REST: only own profile visible', profiles.status === 200 && profiles.json.length === 1 && profiles.json[0].id === userId, `rows ${profiles.json.length}`);
-
-  const sessions = await call(`${api}/rest/v1/daily_sessions?select=user_id`, { token });
-  check('REST: only own sessions visible', sessions.status === 200 && sessions.json.every((s) => s.user_id === userId), `rows ${sessions.json.length}`);
-
-  const puzzles = await call(`${api}/rest/v1/daily_puzzles?select=pokemon_name`, { token });
-  check('REST: puzzle answers hidden', puzzles.status === 200 && puzzles.json.length === 0, `rows ${puzzles.json.length}`);
-
-  const write = await call(`${api}/rest/v1/ball_unlocks`, { method: 'POST', token, body: { user_id: userId, ball_id: 'master-ball' } });
-  check('REST: direct writes blocked', write.status === 401 || write.status === 403, `status ${write.status}`);
-
-  const logout = await call(`${api}/auth/v1/logout`, { method: 'POST', token });
-  check('sign-out', logout.status === 204, `status ${logout.status}`);
+  const logout = await call('/v1/auth/logout', { method: 'POST', token });
+  check('sign-out', logout.status === 200, `status ${logout.status}`);
+  check('token revoked', (await call('/v1/get-me', { token })).status === 401);
 } catch (err) {
   check('unexpected error', false, err.message);
 } finally {
   if (userId) {
-    const del = await call(`${admin}/auth/v1/admin/users/${userId}`, { method: 'DELETE', token: service, headers: { apikey: service } });
-    check('cleanup: test user deleted', del.status === 200, `status ${del.status}`);
+    psql(`delete from users where id = '${userId}'`);
+    check('cleanup: test user deleted', psql(`select count(*) from users where id = '${userId}'`) === '0');
   }
+  psql(`delete from daily_sessions where guest_id = '${guestId}'`);
 }
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nAll checks passed');
