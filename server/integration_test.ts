@@ -1,12 +1,12 @@
 // Full API flows against a real, migrated Postgres:
-//   DATABASE_URL=postgres://... deno test -A server/integration_test.ts
+//   DATABASE_URL=postgres://... deno test -A --config server/deno.json server/integration_test.ts
 // Uses MAIL_MODE=log and reads links from the captured mail log. Creates its
 // own uniquely named accounts, so it can run against a shared test database.
 import { assert, assertEquals, assertExists } from 'jsr:@std/assert@1';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import bcrypt from 'bcryptjs';
 
-if (!Deno.env.get('DATABASE_URL')) throw new Error('DATABASE_URL must be set');
+if (!Deno.env.get('DATABASE_URL') && !Deno.env.get('PGHOST')) throw new Error('DATABASE_URL (or PGHOST etc.) must be set');
 Deno.env.set('MAIL_MODE', 'log');
 Deno.env.set('TARGET_SALT', Deno.env.get('TARGET_SALT') ?? 'integration-test-salt');
 Deno.env.set('SITE_URL', 'http://localhost:5173');
