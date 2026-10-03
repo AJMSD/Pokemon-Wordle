@@ -10,6 +10,17 @@ const LOCAL_JWKS = SUPABASE_JWKS ? jose.createLocalJWKSet(SUPABASE_JWKS) : null
 const VERIFY_JWT = Deno.env.get('VERIFY_JWT') === 'true'
 const PUBLIC_FUNCTIONS = new Set((Deno.env.get('PUBLIC_FUNCTIONS') ?? '').split(',').filter(Boolean))
 
+// Env vars forwarded to user workers (least privilege). SUPABASE_DB_URL is
+// deliberately absent: no function connects to Postgres directly.
+const WORKER_ENV_ALLOWLIST = [
+  'SUPABASE_URL',
+  'SUPABASE_PUBLIC_URL',
+  'SUPABASE_ANON_KEY',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'JWT_SECRET',
+  'TARGET_SALT',
+]
+
 type AuthFailure = {
   code: RequestErrors
   message?: string
@@ -307,7 +318,9 @@ Deno.serve(async (req: Request) => {
   const path_parts = pathname.split('/')
   const service_name = path_parts[1]
 
-  if (!service_name || service_name === '') {
+  // Names starting with `_` (e.g. _shared) are libraries, not functions; also
+  // reject anything that is not a plain directory name.
+  if (!service_name || service_name.startsWith('_') || !/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(service_name)) {
     return getFunctionErrorResponse({
       code: RequestErrors.NotFound,
       message: 'Requested function was not found',
@@ -355,7 +368,14 @@ Deno.serve(async (req: Request) => {
   // SUPABASE_FUNCTION_SLUG is listed after the container env snapshot so
   // nothing in it can shadow the value, and it is per-request because only this
   // worker knows which function the request resolved to.
-  const envVarsObj = { ...Deno.env.toObject(), SUPABASE_FUNCTION_SLUG: service_name }
+  // Workers only get the variables the functions actually read, not the whole
+  // container environment.
+  const envVarsObj: Record<string, string> = {}
+  for (const name of WORKER_ENV_ALLOWLIST) {
+    const value = Deno.env.get(name)
+    if (value !== undefined) envVarsObj[name] = value
+  }
+  envVarsObj.SUPABASE_FUNCTION_SLUG = service_name
   const envVars = Object.keys(envVarsObj).map((k) => [k, envVarsObj[k]])
 
   const callWorker = async (req: Request, retriesLeft = MAX_WORKER_RETRIES): Promise<Response> => {

@@ -8,10 +8,18 @@
 
 name: wurmple
 
+# Cap container log size so json-file logs can't fill the disk.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
     image: supabase/postgres:17.6.1.136
     restart: unless-stopped
+    logging: *default-logging
     mem_limit: 384m
     ports:
       - "127.0.0.1:54322:5432"
@@ -57,6 +65,7 @@ services:
   auth:
     image: supabase/gotrue:v2.196.0
     restart: unless-stopped
+    logging: *default-logging
     mem_limit: 96m
     depends_on:
       db:
@@ -86,7 +95,7 @@ services:
       GOTRUE_JWT_SECRET: ${JWT_SECRET}
       GOTRUE_JWT_ISSUER: ${API_EXTERNAL_URL}/auth/v1
 
-      GOTRUE_PASSWORD_MIN_LENGTH: 6
+      GOTRUE_PASSWORD_MIN_LENGTH: 8
       GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED: "true"
       GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL: 10
 
@@ -120,6 +129,7 @@ services:
   rest:
     image: postgrest/postgrest:v14.17
     restart: unless-stopped
+    logging: *default-logging
     mem_limit: 128m
     depends_on:
       db:
@@ -134,11 +144,19 @@ services:
       PGRST_JWT_SECRET: ${JWT_SECRET}
       PGRST_DB_USE_LEGACY_GUCS: "false"
       PGRST_APP_SETTINGS_JWT_EXP: ${JWT_EXPIRY}
+      PGRST_ADMIN_SERVER_PORT: 3001
+    healthcheck:
+      test: ["CMD", "postgrest", "--ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     command: ["postgrest"]
 
   functions:
     image: supabase/edge-runtime:v1.76.2
     restart: unless-stopped
+    logging: *default-logging
     mem_limit: 512m
     depends_on:
       - gateway
@@ -154,15 +172,25 @@ services:
       SUPABASE_PUBLIC_URL: ${API_EXTERNAL_URL}
       SUPABASE_ANON_KEY: ${ANON_KEY}
       SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
-      SUPABASE_DB_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/postgres
+      # Optional override for the per-user target salt (defaults to JWT_SECRET
+      # in the functions); see RUNBOOK "Key rotation".
+      TARGET_SALT: ${TARGET_SALT:-}
       VERIFY_JWT: "true"
       # Functions reachable without a JWT (hosted equivalent: --no-verify-jwt)
       PUBLIC_FUNCTIONS: health,validate-email
+    healthcheck:
+      # TCP probe of the main service (no curl/wget assumed in the image).
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9000'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     command: ["start", "--main-service", "/home/deno/main"]
 
   gateway:
     image: nginx:1.29-alpine
     restart: unless-stopped
+    logging: *default-logging
     mem_limit: 32m
     ports:
       - "127.0.0.1:54321:8000" # API  -> wurmple-api.ajmsd.space
@@ -171,6 +199,11 @@ services:
       # Directory mount: single-file binds keep the old inode when git replaces the file.
       - ./nginx:/etc/nginx/conf.d:ro
       - ./site:/usr/share/nginx/html:ro
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8000 && nc -z 127.0.0.1 8080"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
 volumes:
   db-data:

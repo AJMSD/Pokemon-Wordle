@@ -5,3 +5,4 @@ backups/
 .deploy.lock
 .build/
 *.log
+.cleanup-stamp
