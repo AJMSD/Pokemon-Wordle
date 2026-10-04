@@ -6,6 +6,3 @@ backups/
 .build/
 *.log
 .cleanup-stamp
-.cutover-done
-.env.old-stack.bak
-site.old-stack.bak/
