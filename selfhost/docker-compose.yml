@@ -54,6 +54,12 @@ services:
     restart: unless-stopped
     logging: *default-logging
     mem_limit: 256m
+    # Fixed resolvers for PokéAPI/Google/SMTP lookups: a running container keeps
+    # the host's DNS config from when it started, so a host DNS change (e.g.
+    # Tailscale MagicDNS going away) otherwise breaks lookups until a restart.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     depends_on:
       postgres:
         condition: service_healthy
